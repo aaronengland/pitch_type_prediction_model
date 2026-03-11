@@ -11,6 +11,6 @@
   "gamma": 0.1,
   "seed": 42,
   "verbosity": 1,
-  "best_iteration": 66,
-  "best_score": 1.993733462223762
+  "best_iteration": 64,
+  "best_score": 1.9972057388791553
 }
