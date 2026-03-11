@@ -1,0 +1,14 @@
+{
+  "objective": "multi:softprob",
+  "num_class": 8,
+  "eval_metric": "mlogloss",
+  "max_depth": 6,
+  "learning_rate": 0.1,
+  "subsample": 0.8,
+  "colsample_bytree": 0.8,
+  "min_child_weight": 5,
+  "seed": 42,
+  "verbosity": 1,
+  "best_iteration": 5,
+  "best_score": 2.0011819434062654
+}
