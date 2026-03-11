@@ -1,5 +1,6 @@
 # Data
 00_data_collection/
+.DS_Store
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
