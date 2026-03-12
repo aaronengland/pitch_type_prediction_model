@@ -161,6 +161,7 @@ Creates game-situation features from pre-pitch columns:
 - `score_diff`: Score differential from pitching team's perspective.
 - `on_1b_flag`, `on_2b_flag`, `on_3b_flag`: Binary runner indicators.
 - `runners_on`: Total runners on base.
+- `bases_loaded`: Binary indicator for all three bases occupied — high-leverage situation that shifts pitch selection toward ground-ball pitches.
 - `same_hand`: Whether pitcher and batter share handedness (platoon indicator).
 - `is_first_pitch`: Binary indicator for first pitch of at-bat.
 - `b_height_inches`: Batter height converted from string (e.g., "6-2") to inches (e.g., 74).
@@ -200,7 +201,7 @@ Creates a categorical count state feature:
 
 #### 3.2.9 PrepareFeatures (stateful)
 Selects, encodes, and aligns the final feature matrix:
-- **21 numeric features**: inning, top, outs, balls, strikes, fouls, pcount_at_bat, pcount_pitcher, at_bat_num, score_diff, total_runs, close_game, late_inning, runner flags, same_hand, is_first_pitch, b_height_inches, pitcher_n_types.
+- **22 numeric features**: inning, top, outs, balls, strikes, fouls, pcount_at_bat, pcount_pitcher, at_bat_num, score_diff, total_runs, close_game, late_inning, runner flags, bases_loaded, same_hand, is_first_pitch, b_height_inches, pitcher_n_types.
 - **40 mix features**: All pitcher_pct, pitcher_count_pct, pitcher_hand_pct, pitcher_hand_count_pct, and batter_pct columns (filled with 0 for unseen entities).
 - **5 categorical features** (one-hot encoded): p_throws, stand, prev_pitch_type, prev_pitch_type_2, count_category.
 
