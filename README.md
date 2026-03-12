@@ -225,12 +225,9 @@ A grid search is performed over key hyperparameters using early stopping on the 
 | Parameter | Search Space |
 |---|---|
 | learning_rate | 0.005, 0.01 |
-| max_depth | 4, 5, 6 |
+| max_depth | 4, 6 |
 | colsample_bytree | 0.7, 0.9 |
-| subsample | 0.7, 0.8 |
 | min_child_weight | 5, 10 |
-| reg_lambda | 0.5, 1.0 |
-| gamma | 0, 0.1 |
 
 The best configuration (lowest validation `mlogloss`) is selected and retrained with `num_boost_round=3000` and `early_stopping_rounds=100`. Grid search results are saved to `grid_search_results.csv`.
 
