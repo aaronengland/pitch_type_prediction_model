@@ -180,7 +180,6 @@ Creates broader game-context features:
 Learns pitcher-level aggregate statistics from training data:
 - `pitcher_pct_{type}`: Each pitcher's overall pitch type distribution (8 columns).
 - `pitcher_count_pct_{type}`: Pitcher's pitch distribution per ball-strike count (8 columns).
-- `pitcher_total_pitches`: Total training pitches thrown by the pitcher.
 - `pitcher_n_types`: Number of distinct pitch types in the pitcher's repertoire.
 
 #### 3.2.5 PitcherHandednessStats (stateful)
@@ -194,7 +193,6 @@ Captures the most granular pitcher tendency: pitch mix by (pitcher, handedness m
 #### 3.2.7 BatterStats (stateful)
 Learns batter-level aggregate statistics from training data:
 - `batter_pct_{type}`: Distribution of pitch types each batter faces (8 columns).
-- `batter_total_pitches`: Total training pitches seen by the batter.
 
 #### 3.2.8 CountCategory (stateless)
 Creates a categorical count state feature:
@@ -202,7 +200,7 @@ Creates a categorical count state feature:
 
 #### 3.2.9 PrepareFeatures (stateful)
 Selects, encodes, and aligns the final feature matrix:
-- **23 numeric features**: inning, top, outs, balls, strikes, fouls, pcount_at_bat, pcount_pitcher, at_bat_num, score_diff, total_runs, close_game, late_inning, runner flags, same_hand, is_first_pitch, b_height_inches, pitcher_total_pitches, pitcher_n_types, batter_total_pitches.
+- **21 numeric features**: inning, top, outs, balls, strikes, fouls, pcount_at_bat, pcount_pitcher, at_bat_num, score_diff, total_runs, close_game, late_inning, runner flags, same_hand, is_first_pitch, b_height_inches, pitcher_n_types.
 - **40 mix features**: All pitcher_pct, pitcher_count_pct, pitcher_hand_pct, pitcher_hand_count_pct, and batter_pct columns (filled with 0 for unseen entities).
 - **5 categorical features** (one-hot encoded): p_throws, stand, prev_pitch_type, prev_pitch_type_2, count_category.
 
@@ -224,25 +222,43 @@ A grid search is performed over key hyperparameters using early stopping on the 
 
 | Parameter | Search Space |
 |---|---|
-| learning_rate | 0.005, 0.01 |
+| learning_rate | 0.05, 0.1 |
 | max_depth | 4, 6 |
 | colsample_bytree | 0.7, 0.9 |
 | min_child_weight | 5, 10 |
 
-The best configuration (lowest validation `mlogloss`) is selected and retrained with `num_boost_round=3000` and `early_stopping_rounds=100`. Grid search results are saved to `grid_search_results.csv`.
+The best configuration (lowest validation `mlogloss`) is selected. Grid search uses `num_boost_round=500` with `early_stopping_rounds=25`. Results are saved to `grid_search_results.csv`.
 
-### 4.3 Training
+### 4.3 Recursive Feature Elimination (RFE)
 
-The final model trains on the training set with the best hyperparameters from the grid search. Early stopping is monitored on the validation set, selecting the iteration with minimum validation `mlogloss`.
+After selecting the best hyperparameters, RFE is used to iteratively remove low-importance features:
+
+1. Train a model with the best hyperparameters on the current feature set.
+2. Rank features by gain importance.
+3. Drop the 3 lowest-gain features per round.
+4. Stop when validation log-loss doesn't improve for 2 consecutive rounds.
+
+This reduces noise features that contribute to overfitting and improves generalization. The selected feature set is saved to `selected_features.json`.
+
+### 4.4 Training
+
+The final model trains on the training set using the best hyperparameters and RFE-selected features. Early stopping is monitored on the validation set with `num_boost_round=500` and `early_stopping_rounds=50`, selecting the iteration with minimum validation `mlogloss`.
 
 **Important implementation note**: In xgboost 2.x, `model.predict()` does **not** automatically use `best_iteration` after early stopping. All prediction calls must explicitly pass `iteration_range=(0, model.best_iteration + 1)` to avoid using the fully overfitted model.
 
-### 4.4 Saved Artifacts
+### 4.5 Overfitting Assessment
+
+A comprehensive comparison of train, validation, and test metrics (accuracy and log-loss) is computed to assess generalization. The train-valid gap and valid-test gap are reported to quantify overfitting. Results are saved to `overfitting_metrics.json`.
+
+### 4.6 Saved Artifacts
 
 All artifacts are saved locally to `./output/`:
 - `xgb_model.json`: The trained XGBoost model.
 - `label_encoder.joblib`: The fitted LabelEncoder.
 - `best_iteration.json`: Best iteration number for downstream inference.
+- `selected_features.json`: Features selected by RFE.
+- `rfe_results.csv`: RFE round-by-round results (features, iterations, validation loss).
+- `overfitting_metrics.json`: Train/valid/test accuracy and log-loss with gap analysis.
 - `test_predictions.csv`: Test set predictions (probabilities + predicted/actual labels).
 - `params.json`: Training parameters and best iteration/score.
 - `grid_search_results.csv`: All hyperparameter configurations and their validation scores.
@@ -251,9 +267,17 @@ All artifacts are saved locally to `./output/`:
 
 ## 5. Model Evaluation (`05_model_eval/`)
 
-### 5.1 Overall Metrics
+### 5.1 Overfitting Assessment
 
-*Results will be updated after re-running the pipeline with new features and tuned hyperparameters.*
+Train vs. Validation vs. Test metrics to quantify generalization:
+
+| Split | Accuracy | Log-Loss |
+|---|---|---|
+| Train | *updated after run* | *updated after run* |
+| Validation | *updated after run* | *updated after run* |
+| Test | *updated after run* | *updated after run* |
+
+A large train-valid gap indicates overfitting; a small valid-test gap indicates the model generalizes consistently to unseen data.
 
 ### 5.2 Baseline Comparison
 
@@ -262,7 +286,7 @@ All artifacts are saved locally to `./output/`:
 | Always predict FF | 34.8% |
 | Pitcher mode | 45.6% |
 | Pitcher mode per count | 47.2% |
-| **XGBoost (tuned)** | **TBD** |
+| **XGBoost (tuned + RFE)** | *updated after run* |
 
 The baseline results are computed from training data and applied to the test set. The ML model must beat the pitcher-mode-per-count baseline (47.2%) to demonstrate value beyond simple lookup tables.
 
