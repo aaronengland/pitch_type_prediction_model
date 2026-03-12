@@ -170,33 +170,43 @@ Creates within-at-bat pitch sequencing features:
 - `prev_pitch_type`: The previous pitch thrown in this at-bat (`'NONE'` for first pitch).
 - `prev_pitch_type_2`: The pitch thrown two pitches ago (`'NONE'` if unavailable).
 
-#### 3.2.3 PitcherStats (stateful)
+#### 3.2.3 GameContextFeatures (stateless)
+Creates broader game-context features:
+- `total_runs`: Total runs scored in the game so far (away + home). High-scoring games have different pitch patterns.
+- `close_game`: Binary indicator for close games (`|score_diff| <= 2`). Pitchers pitch more carefully in tight games.
+- `late_inning`: Binary indicator for innings 7+. Late-game, high-leverage situations influence pitch selection.
+
+#### 3.2.4 PitcherStats (stateful)
 Learns pitcher-level aggregate statistics from training data:
 - `pitcher_pct_{type}`: Each pitcher's overall pitch type distribution (8 columns).
 - `pitcher_count_pct_{type}`: Pitcher's pitch distribution per ball-strike count (8 columns).
 - `pitcher_total_pitches`: Total training pitches thrown by the pitcher.
 - `pitcher_n_types`: Number of distinct pitch types in the pitcher's repertoire.
 
-#### 3.2.4 PitcherHandednessStats (stateful)
+#### 3.2.5 PitcherHandednessStats (stateful)
 Learns pitcher pitch mix conditioned on batter handedness:
 - `pitcher_hand_pct_{type}`: Pitch distribution per (pitcher, same_hand) combination (8 columns).
 
-#### 3.2.5 BatterStats (stateful)
+#### 3.2.6 PitcherHandednessCountStats (stateful)
+Captures the most granular pitcher tendency: pitch mix by (pitcher, handedness matchup, count). A right-handed pitcher facing a left-handed batter in a 0-2 count will throw a very different mix than against a right-handed batter in a 3-1 count.
+- `pitcher_hand_count_pct_{type}`: Pitch distribution per (pitcher, same_hand, count) combination (8 columns).
+
+#### 3.2.7 BatterStats (stateful)
 Learns batter-level aggregate statistics from training data:
 - `batter_pct_{type}`: Distribution of pitch types each batter faces (8 columns).
 - `batter_total_pitches`: Total training pitches seen by the batter.
 
-#### 3.2.6 CountCategory (stateless)
+#### 3.2.8 CountCategory (stateless)
 Creates a categorical count state feature:
 - `count_category`: One of `first_pitch`, `ahead`, `behind`, `even`, `full_count`.
 
-#### 3.2.7 PrepareFeatures (stateful)
+#### 3.2.9 PrepareFeatures (stateful)
 Selects, encodes, and aligns the final feature matrix:
-- **19 numeric features**: inning, top, outs, balls, strikes, fouls, pcount_at_bat, pcount_pitcher, score_diff, runner flags, same_hand, is_first_pitch, b_height_inches, pitcher_total_pitches, pitcher_n_types, batter_total_pitches.
-- **32 mix features**: All pitcher_pct, pitcher_count_pct, pitcher_hand_pct, and batter_pct columns (filled with 0 for unseen entities).
+- **23 numeric features**: inning, top, outs, balls, strikes, fouls, pcount_at_bat, pcount_pitcher, at_bat_num, score_diff, total_runs, close_game, late_inning, runner flags, same_hand, is_first_pitch, b_height_inches, pitcher_total_pitches, pitcher_n_types, batter_total_pitches.
+- **40 mix features**: All pitcher_pct, pitcher_count_pct, pitcher_hand_pct, pitcher_hand_count_pct, and batter_pct columns (filled with 0 for unseen entities).
 - **5 categorical features** (one-hot encoded): p_throws, stand, prev_pitch_type, prev_pitch_type_2, count_category.
 
-**Total features**: 78
+**Total features**: ~90 (exact count depends on one-hot encoding)
 
 ---
 
@@ -208,27 +218,25 @@ Selects, encodes, and aligns the final feature matrix:
 
 A `LabelEncoder` converts string pitch types (CH, CU, FC, FF, FS, FT, SI, SL) to integer labels 0-7 as required by XGBoost's `DMatrix`.
 
-### 4.2 Hyperparameters
+### 4.2 Hyperparameter Tuning
 
-| Parameter | Value |
+A grid search is performed over key hyperparameters using early stopping on the validation set:
+
+| Parameter | Search Space |
 |---|---|
-| objective | multi:softprob |
-| num_class | 8 |
-| eval_metric | mlogloss |
-| max_depth | 4 |
-| learning_rate | 0.05 |
-| subsample | 0.7 |
-| colsample_bytree | 0.5 |
-| min_child_weight | 5 |
-| reg_lambda | 1.0 |
-| gamma | 0.1 |
-| seed | 42 |
-| num_boost_round | 3000 |
-| early_stopping_rounds | 100 |
+| learning_rate | 0.005, 0.01 |
+| max_depth | 4, 5, 6 |
+| colsample_bytree | 0.7, 0.9 |
+| subsample | 0.7, 0.8 |
+| min_child_weight | 5, 10 |
+| reg_lambda | 0.5, 1.0 |
+| gamma | 0, 0.1 |
+
+The best configuration (lowest validation `mlogloss`) is selected and retrained with `num_boost_round=3000` and `early_stopping_rounds=100`. Grid search results are saved to `grid_search_results.csv`.
 
 ### 4.3 Training
 
-The model trains on the training set with early stopping monitored on the validation set. The best iteration is selected by minimum validation `mlogloss`.
+The final model trains on the training set with the best hyperparameters from the grid search. Early stopping is monitored on the validation set, selecting the iteration with minimum validation `mlogloss`.
 
 **Important implementation note**: In xgboost 2.x, `model.predict()` does **not** automatically use `best_iteration` after early stopping. All prediction calls must explicitly pass `iteration_range=(0, model.best_iteration + 1)` to avoid using the fully overfitted model.
 
@@ -240,6 +248,7 @@ All artifacts are saved locally to `./output/`:
 - `best_iteration.json`: Best iteration number for downstream inference.
 - `test_predictions.csv`: Test set predictions (probabilities + predicted/actual labels).
 - `params.json`: Training parameters and best iteration/score.
+- `grid_search_results.csv`: All hyperparameter configurations and their validation scores.
 
 ---
 
@@ -247,22 +256,18 @@ All artifacts are saved locally to `./output/`:
 
 ### 5.1 Overall Metrics
 
-| Metric | Value |
-|---|---|
-| Test Accuracy | 39.9% |
-| Test Log-Loss | 1.7325 |
-| Best Iteration | 13 |
+*Results will be updated after re-running the pipeline with new features and tuned hyperparameters.*
 
 ### 5.2 Baseline Comparison
 
-| Model | Accuracy | Lift vs. Best Baseline |
-|---|---|---|
-| Always predict FF | 34.8% | — |
-| Pitcher mode | 45.6% | — |
-| Pitcher mode per count | 47.2% | — |
-| **XGBoost** | **39.9%** | **-7.2 pp** |
+| Model | Accuracy |
+|---|---|
+| Always predict FF | 34.8% |
+| Pitcher mode | 45.6% |
+| Pitcher mode per count | 47.2% |
+| **XGBoost (tuned)** | **TBD** |
 
-The model currently underperforms the pitcher-mode-per-count baseline. This is likely caused by a bug in the `model.predict()` call (missing `iteration_range`) that was identified and fixed but **not yet validated** by re-running the pipeline. The model stopped at iteration 13 with validation mlogloss of 1.9939, but predictions may have been made using all 113 trees (the fully overfitted model).
+The baseline results are computed from training data and applied to the test set. The ML model must beat the pitcher-mode-per-count baseline (47.2%) to demonstrate value beyond simple lookup tables.
 
 ### 5.3 Confusion Matrix
 
@@ -295,11 +300,10 @@ The confidence distribution and accuracy-by-confidence analysis show how reliabl
 
 ## 6. Next Steps
 
-1. **Re-run the pipeline** with the `iteration_range` fix to validate corrected predictions.
-2. **Hyperparameter tuning**: Systematic search (Bayesian optimization or grid search) over learning rate, max_depth, subsample, and colsample_bytree.
-3. **Additional features**: Game-level momentum (recent AB outcomes), platoon-specific count tendencies, time-of-game features.
-4. **Alternative models**: LightGBM, CatBoost, or neural network approaches that may capture sequential pitch patterns better.
-5. **Ensemble**: Combine model predictions with the pitcher-mode-per-count baseline (e.g., weighted average or stacking).
+1. **Alternative models**: LightGBM, CatBoost, or neural network approaches that may capture sequential pitch patterns better.
+2. **Ensemble**: Combine model predictions with the pitcher-mode-per-count baseline (e.g., weighted average or stacking).
+3. **Expanded feature engineering**: Pitcher fatigue curves (pitch count vs. typical workload), game-level momentum from score changes, day/night splits, and park effects.
+4. **Cross-validation**: Replace single out-of-time split with rolling-window cross-validation for more robust hyperparameter selection.
 
 ---
 
@@ -318,11 +322,11 @@ assessment_swish_analytics/
 ├── 03_preprocessing/            # Feature engineering pipeline
 │   ├── notebook.ipynb
 │   └── output/                  # Pickled PreprocessingModel
-├── 04_model/                    # XGBoost training
+├── 04_model/                    # XGBoost training + hyperparameter tuning
 │   ├── notebook.ipynb
-│   └── output/                  # Model, label encoder, predictions
+│   └── output/                  # Model, label encoder, predictions, grid search results
 ├── 05_model_eval/               # Evaluation and diagnostics
 │   ├── notebook.ipynb
 │   └── output/                  # Evaluation figures
-└── documentation.md             # This file
+└── README.md                    # This file
 ```
