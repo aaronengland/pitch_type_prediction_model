@@ -152,7 +152,17 @@ Preprocessing follows a **class-based fit/transform pattern**:
 3. `transform` applies the learned transformation to any split.
 4. All fitted transformers are collected into a `PreprocessingModel` wrapper and serialized with `joblib`.
 
-### 3.2 Transformer Pipeline
+### 3.2 Bayesian Smoothing
+
+All pitch mix features (pitcher, pitcher-count, pitcher-handedness, pitcher-handedness-count, and batter) use **Bayesian smoothing** to address target leakage. Raw proportions computed from training targets create an information advantage on training data. Smoothing blends each entity's rates toward the global average:
+
+```
+smoothed_pct = (count + alpha * global_pct) / (total + alpha)
+```
+
+With `alpha=50`, high-volume pitchers keep their true tendencies while low-sample and unseen entities are regularized toward the league-wide pitch distribution. This reduces the train-validation gap and provides reasonable defaults for September call-ups and other unseen players.
+
+### 3.3 Transformer Pipeline
 
 The transformers are applied in this order:
 
