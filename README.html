@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Pitch Type Prediction Model</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      color: #24292e;
+      background-color: #fff;
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 32px 28px;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 24px;
+      margin-bottom: 16px;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+    h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid #eaecef; }
+    h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid #eaecef; }
+    h3 { font-size: 1.25em; }
+    h4 { font-size: 1em; }
+    p, li { margin-bottom: 8px; }
+    a { color: #0366d6; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    table {
+      border-collapse: collapse;
+      width: auto;
+      margin: 16px 0;
+    }
+    th, td {
+      border: 1px solid #dfe2e5;
+      padding: 8px 16px;
+    }
+    th {
+      background-color: #f6f8fa;
+      font-weight: 600;
+    }
+    tr:nth-child(even) { background-color: #f6f8fa; }
+    code {
+      font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 85%;
+      background-color: rgba(27,31,35,0.05);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+      white-space: pre-wrap;
+    }
+    pre {
+      background-color: #f6f8fa;
+      border-radius: 6px;
+      padding: 16px;
+      overflow: auto;
+      line-height: 1.45;
+    }
+    pre code { background: none; padding: 0; }
+    blockquote {
+      margin: 16px 0;
+      padding: 0 16px;
+      color: #6a737d;
+      border-left: 4px solid #dfe2e5;
+    }
+    img { max-width: 100%; height: auto; }
+    hr { border: none; border-top: 1px solid #eaecef; margin: 24px 0; }
+    span.smallcaps{font-variant: small-caps;}
+    span.underline{text-decoration: underline;}
+    div.column{display: inline-block; vertical-align: top; width: 50%;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    header#title-block-header { display: none; }
+  </style>
+  <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Pitch Type Prediction Model</h1>
+</header>
+<h1 id="pitch-type-prediction-model">Pitch Type Prediction Model</h1>
+<h2 id="about-this-project">About This Project</h2>
+<p>This project was completed as a take-home assessment for Swish Analytics. The goal is to predict the <strong>probability</strong> that the next thrown pitch will be a fastball, slider, changeup, curveball, or other pitch type — using pitch-by-pitch data from the 2011 MLB season. The model outputs a full probability distribution across all 8 pitch types for each prediction, not just a single class label.</p>
+<p>This is a <strong>multi-class classification problem</strong> — a type of prediction where the model chooses between more than two possible outcomes. Given the game situation and pitcher/batter context known <strong>prior to the pitch being thrown</strong>, the model estimates how likely each pitch type is.</p>
+<p>Each step of the analysis is organized into its own directory with a Python notebook (<code>.ipynb</code>) and an accompanying HTML export for easy review. Markup text within each notebook explains the analysis, graphs, and decisions at each stage.</p>
+<blockquote>
+<p><em>Given the 4–6 hour time constraint, I focused my time on thorough EDA, a leakage-aware preprocessing pipeline, and honest model evaluation — rather than chasing maximum accuracy through extensive tuning. The <a href="#6-next-steps">Next Steps</a> section outlines what I would pursue with additional time.</em></p>
+</blockquote>
+<h3 id="pitch-type-abbreviations">Pitch Type Abbreviations</h3>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;">Abbreviation</th>
+<th style="text-align: left;">Pitch Type</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;"><strong>FF</strong></td>
+<td style="text-align: left;">Four-seam Fastball</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;"><strong>SL</strong></td>
+<td style="text-align: left;">Slider</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;"><strong>SI</strong></td>
+<td style="text-align: left;">Sinker</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;"><strong>FT</strong></td>
+<td style="text-align: left;">Two-seam Fastball</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;"><strong>CH</strong></td>
+<td style="text-align: left;">Changeup</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;"><strong>CU</strong></td>
+<td style="text-align: left;">Curveball</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;"><strong>FC</strong></td>
+<td style="text-align: left;">Cutter</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;"><strong>FS</strong></td>
+<td style="text-align: left;">Splitter</td>
+</tr>
+</tbody>
+</table>
+<h3 id="dataset-at-a-glance">Dataset at a Glance</h3>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Metric</th>
+<th style="text-align: left;">Value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Total pitches</td>
+<td style="text-align: left;">698,318</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Games</td>
+<td style="text-align: left;">2,466</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Season window</td>
+<td style="text-align: left;">March 31 – October 28, 2011</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Pitchers</td>
+<td style="text-align: left;">662</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Batters</td>
+<td style="text-align: left;">936</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1-exploratory-data-analysis-eda">1. Exploratory Data Analysis (EDA)</h2>
+<blockquote>
+<p><em>All EDA work lives in the <code>01_eda/</code> directory.</em></p>
+</blockquote>
+<h3 id="11-dataset-description">1.1 Dataset Description</h3>
+<p>The raw dataset contains 718,961 rows and 125 columns. After filtering to non-null pitch types and the 8 main pitch types listed above, 698,318 pitches remain. The overall missing rate across all columns is approximately 45%, primarily driven by runner-related columns (runners 4–7 are virtually never populated) and PITCHf/x measurement columns — sensor-derived metrics that are only available <em>after</em> the pitch is thrown.</p>
+<h3 id="12-data-types">1.2 Data Types</h3>
+<p><img src="01_eda/output/dtype_freq.png" alt="Column Frequency by Data Type" /></p>
+<p>The dataset is predominantly numeric (<code>float64</code> and <code>int64</code> columns), with a smaller number of string columns for identifiers, timestamps, and categorical fields.</p>
+<h3 id="13-missing-data">1.3 Missing Data</h3>
+<p><img src="01_eda/output/propna.png" alt="Proportion Missing by Column" /></p>
+<p><img src="01_eda/output/propna_missing_only.png" alt="Proportion Missing — Missing Columns Only" /></p>
+<p>Most missing values are concentrated in runner event columns (runners 4–7 are always null because they represent rare baserunning scenarios) and PITCHf/x measurement columns. The features available <em>prior</em> to the pitch — the ones I use for modeling — have minimal missingness.</p>
+<h3 id="14-target-distribution">1.4 Target Distribution</h3>
+<p><img src="01_eda/output/target_distribution.png" alt="Pitch Type Distribution" /></p>
+<p>The <strong>target</strong> (the variable the model is trying to predict) is imbalanced: Four-seam Fastball (FF) dominates at ~34%, followed by Slider (SL) at ~16% and Sinker (SI) at ~13%. Splitter (FS) is the rarest at ~1.5%.</p>
+<h3 id="15-pitch-type-by-count">1.5 Pitch Type by Count</h3>
+<blockquote>
+<p><em>The "count" refers to the current ball-strike count during an at-bat (e.g., 3-2 means 3 balls and 2 strikes).</em></p>
+</blockquote>
+<p><img src="01_eda/output/pitch_type_by_count.png" alt="Pitch Type by Count" /></p>
+<p>Pitch selection changes dramatically depending on the count:</p>
+<ul>
+<li><strong>Pitcher-ahead counts</strong> (0-2, 1-2) — More breaking balls (SL, CU) and off-speed pitches (CH), since the pitcher can afford to throw pitches outside the strike zone.</li>
+<li><strong>Hitter-ahead counts</strong> (3-0, 3-1) — Predominantly fastballs (FF, FT, SI) because the pitcher needs to throw strikes.</li>
+<li><strong>Full count</strong> (3-2) — The mix shifts toward fastballs, but breaking balls remain present.</li>
+</ul>
+<h3 id="16-pitch-type-by-handedness-matchup">1.6 Pitch Type by Handedness Matchup</h3>
+<blockquote>
+<p><em>The "platoon advantage" describes the tendency for batters to perform better against opposite-hand pitchers (e.g., a left-handed batter vs. a right-handed pitcher).</em></p>
+</blockquote>
+<p><img src="01_eda/output/pitch_type_by_handedness.png" alt="Pitch Type by Handedness" /></p>
+<p>The platoon advantage significantly impacts pitch mix. Pitchers throw different combinations against same-hand vs. opposite-hand batters — for example, more sliders to same-hand batters and more changeups to opposite-hand batters.</p>
+<h3 id="17-pitch-type-by-outs">1.7 Pitch Type by Outs</h3>
+<p><img src="01_eda/output/pitch_type_by_outs.png" alt="Pitch Type by Outs" /></p>
+<p>Pitch mix remains relatively stable across 0, 1, and 2 outs, with only minor shifts.</p>
+<h3 id="18-pitcher-repertoire-diversity">1.8 Pitcher Repertoire Diversity</h3>
+<p><img src="01_eda/output/pitch_types_per_pitcher.png" alt="Pitch Types per Pitcher" /></p>
+<p>Most pitchers throw 3–5 distinct pitch types. A few specialists throw only 2, while some have a 6+ pitch repertoire.</p>
+<h3 id="19-top-pitcher-pitch-mix">1.9 Top Pitcher Pitch Mix</h3>
+<p><img src="01_eda/output/top_pitchers_mix.png" alt="Top Pitchers Mix" /></p>
+<p>The top 20 pitchers by volume show highly individual pitch mixes — some are fastball-dominant (~60%+ FF), while others rely on sliders or sinkers as their primary pitch. This reinforces that <strong>pitcher identity is the strongest predictor</strong> of pitch type.</p>
+<h3 id="110-pitch-type-by-inning">1.10 Pitch Type by Inning</h3>
+<p><img src="01_eda/output/pitch_type_by_inning.png" alt="Pitch Type by Inning" /></p>
+<p>Pitch mix is relatively stable across innings 1–9, with subtle shifts as games progress (slightly more fastballs early).</p>
+<h3 id="111-pitch-type-by-runners-on-base">1.11 Pitch Type by Runners on Base</h3>
+<p><img src="01_eda/output/pitch_type_by_runners.png" alt="Pitch Type by Runners" /></p>
+<p>With runners on base, pitchers tend to slightly adjust their mix — for example, more sinkers and two-seamers to induce ground balls for double plays.</p>
+<h3 id="112-pitch-type-by-pitcher-pitch-count">1.12 Pitch Type by Pitcher Pitch Count</h3>
+<p><img src="01_eda/output/pitch_type_by_pitch_count.png" alt="Pitch Type by Pitch Count" /></p>
+<p>As a pitcher's pitch count climbs through the game, the pitch mix shifts modestly. Pitchers may lean more on their primary pitch as fatigue sets in.</p>
+<h3 id="113-first-pitch-vs-later-pitches">1.13 First Pitch vs. Later Pitches</h3>
+<p><img src="01_eda/output/first_pitch_vs_later.png" alt="First Pitch vs Later" /></p>
+<p>Fastballs are overrepresented on the first pitch of an at-bat, while breaking balls and off-speed pitches become more common on subsequent pitches.</p>
+<h3 id="114-temporal-coverage">1.14 Temporal Coverage</h3>
+<p><img src="01_eda/output/pitches_per_month.png" alt="Pitches per Month" /></p>
+<p>The season spans March through October, with April–September being the core months. October contains fewer pitches (postseason only).</p>
+<h3 id="115-baseline-accuracies">1.15 Baseline Accuracies</h3>
+<p>I computed three baselines to set expectations for model performance:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Baseline</th>
+<th style="text-align: center;">Accuracy</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Always predict FF (most common pitch)</td>
+<td style="text-align: center;">34.2%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Predict each pitcher's most common pitch</td>
+<td style="text-align: center;">47.4%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Predict pitcher's most common pitch per count</td>
+<td style="text-align: center;">50.1%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key takeaway:</strong> Pitcher identity combined with the count alone gets to ~50% accuracy. This sets a high bar — any ML model needs to either beat these baselines or add value through better-calibrated probability estimates, which is ultimately what the assessment asks for.</p>
+<hr />
+<h2 id="2-data-split">2. Data Split</h2>
+<blockquote>
+<p><em>All data split work lives in the <code>02_data_split/</code> directory.</em></p>
+</blockquote>
+<h3 id="21-approach">2.1 Approach</h3>
+<p><strong>Look-ahead bias</strong> occurs when a model is trained using information that would not have been available at the time of prediction — for example, training on September games and then predicting August games. To avoid this, I use an <strong>out-of-time split</strong>, which simulates real-world deployment by training on past data and predicting future pitches. The data is sorted chronologically and split by date:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Split</th>
+<th style="text-align: left;">Date Range</th>
+<th style="text-align: center;">Rows</th>
+<th style="text-align: center;">Percentage</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Train</td>
+<td style="text-align: left;">March 31 – August 22, 2011</td>
+<td style="text-align: center;">538,294</td>
+<td style="text-align: center;">77.1%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Validation</td>
+<td style="text-align: left;">August 23 – September 21, 2011</td>
+<td style="text-align: center;">120,479</td>
+<td style="text-align: center;">17.3%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Test</td>
+<td style="text-align: left;">September 22 – October 28, 2011</td>
+<td style="text-align: center;">39,545</td>
+<td style="text-align: center;">5.7%</td>
+</tr>
+</tbody>
+</table>
+<h3 id="22-distribution-stability">2.2 Distribution Stability</h3>
+<p>Pitch type distributions are consistent across splits (within 1–2 percentage points), confirming no major distributional drift within the season:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;">Pitch Type</th>
+<th style="text-align: center;">Train</th>
+<th style="text-align: center;">Validation</th>
+<th style="text-align: center;">Test</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">FF</td>
+<td style="text-align: center;">33.9%</td>
+<td style="text-align: center;">35.2%</td>
+<td style="text-align: center;">34.8%</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">SL</td>
+<td style="text-align: center;">15.8%</td>
+<td style="text-align: center;">15.7%</td>
+<td style="text-align: center;">15.2%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">SI</td>
+<td style="text-align: center;">12.9%</td>
+<td style="text-align: center;">11.6%</td>
+<td style="text-align: center;">11.4%</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">FT</td>
+<td style="text-align: center;">11.5%</td>
+<td style="text-align: center;">11.8%</td>
+<td style="text-align: center;">11.9%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">CH</td>
+<td style="text-align: center;">10.5%</td>
+<td style="text-align: center;">10.0%</td>
+<td style="text-align: center;">10.2%</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">CU</td>
+<td style="text-align: center;">8.0%</td>
+<td style="text-align: center;">8.1%</td>
+<td style="text-align: center;">8.5%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">FC</td>
+<td style="text-align: center;">5.9%</td>
+<td style="text-align: center;">6.1%</td>
+<td style="text-align: center;">6.3%</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">FS</td>
+<td style="text-align: center;">1.5%</td>
+<td style="text-align: center;">1.5%</td>
+<td style="text-align: center;">1.6%</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3-preprocessing">3. Preprocessing</h2>
+<blockquote>
+<p><em>All preprocessing work lives in the <code>03_preprocessing/</code> directory.</em></p>
+</blockquote>
+<h3 id="31-architecture">3.1 Architecture</h3>
+<p><strong>Data leakage</strong> happens when information from outside the training set (such as validation or test data) accidentally influences the model during training, resulting in overly optimistic performance estimates. To prevent this, I use a <strong>class-based fit/transform pattern</strong>:</p>
+<ol type="1">
+<li>Each preprocessing step is a Python class with <code>fit(X)</code> and <code>transform(X)</code> methods.</li>
+<li><code>fit</code> learns parameters from training data <strong>only</strong> — preventing data leakage.</li>
+<li><code>transform</code> applies the learned transformation to any split (train, validation, or test).</li>
+<li>All fitted transformers are collected into a <code>PreprocessingModel</code> wrapper and serialized (saved to disk) with <code>joblib</code>.</li>
+</ol>
+<h3 id="32-bayesian-smoothing">3.2 Bayesian Smoothing</h3>
+<blockquote>
+<p><em>"Target leakage" is a specific form of data leakage where the model gains access to the target variable (the thing it's trying to predict) during training in a way that wouldn't be available at prediction time.</em></p>
+</blockquote>
+<p>All pitch mix features (pitcher, pitcher-count, pitcher-handedness, pitcher-handedness-count, and batter) use <strong>Bayesian smoothing</strong> to address target leakage. Raw proportions computed from training targets would create an information advantage on training data. Smoothing blends each entity's rates toward the global average:</p>
+<pre><code>smoothed_pct = (count + alpha * global_pct) / (total + alpha)</code></pre>
+<p>With <code>alpha=50</code>, high-volume pitchers keep their true tendencies while low-sample and unseen entities are regularized (pulled back) toward the league-wide pitch distribution. This reduces the train-validation gap and provides reasonable defaults for September call-ups and other unseen players.</p>
+<h3 id="33-transformer-pipeline">3.3 Transformer Pipeline</h3>
+<p>The transformers are applied in the following order:</p>
+<h4 id="331-situationfeatures-stateless">3.3.1 SituationFeatures <em>(stateless)</em></h4>
+<p>Creates game-situation features from pre-pitch columns:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>score_diff</code></td>
+<td style="text-align: left;">Score differential from pitching team's perspective</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>on_1b_flag</code>, <code>on_2b_flag</code>, <code>on_3b_flag</code></td>
+<td style="text-align: left;">Binary runner indicators (1 = runner on base, 0 = empty)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>runners_on</code></td>
+<td style="text-align: left;">Total runners on base</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>bases_loaded</code></td>
+<td style="text-align: left;">All three bases occupied — a high-leverage situation that shifts pitch selection toward ground-ball pitches</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>same_hand</code></td>
+<td style="text-align: left;">Whether pitcher and batter share handedness (the platoon indicator)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>is_first_pitch</code></td>
+<td style="text-align: left;">First pitch of the at-bat (1) or not (0)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>b_height_inches</code></td>
+<td style="text-align: left;">Batter height converted from string (e.g., "6-2") to inches (e.g., 74)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="332-lagfeatures-stateless">3.3.2 LagFeatures <em>(stateless)</em></h4>
+<p>Creates within-at-bat pitch sequencing features:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>prev_pitch_type</code></td>
+<td style="text-align: left;">The previous pitch thrown in this at-bat (<code>'NONE'</code> for first pitch)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>prev_pitch_type_2</code></td>
+<td style="text-align: left;">The pitch thrown two pitches ago (<code>'NONE'</code> if unavailable)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="333-gamecontextfeatures-stateless">3.3.3 GameContextFeatures <em>(stateless)</em></h4>
+<p>Creates broader game-context features:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>total_runs</code></td>
+<td style="text-align: left;">Total runs scored in the game so far (away + home)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>close_game</code></td>
+<td style="text-align: left;">Whether the game is close (<code>|score_diff| &lt;= 2</code>) — pitchers pitch more carefully in tight games</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>late_inning</code></td>
+<td style="text-align: left;">Whether the game is in inning 7 or later — late-game, high-leverage situations influence pitch selection</td>
+</tr>
+</tbody>
+</table>
+<h4 id="334-pitcherstats-stateful">3.3.4 PitcherStats <em>(stateful)</em></h4>
+<p>Learns pitcher-level aggregate statistics from training data:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>pitcher_pct_{type}</code></td>
+<td style="text-align: left;">Each pitcher's overall pitch type distribution (8 columns, one per pitch type)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>pitcher_count_pct_{type}</code></td>
+<td style="text-align: left;">Pitcher's pitch distribution per ball-strike count (8 columns)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>pitcher_n_types</code></td>
+<td style="text-align: left;">Number of distinct pitch types in the pitcher's repertoire</td>
+</tr>
+</tbody>
+</table>
+<h4 id="335-pitcherhandednessstats-stateful">3.3.5 PitcherHandednessStats <em>(stateful)</em></h4>
+<p>Learns pitcher pitch mix conditioned on batter handedness:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>pitcher_hand_pct_{type}</code></td>
+<td style="text-align: left;">Pitch distribution per (pitcher, same_hand) combination (8 columns)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="336-pitcherhandednesscountstats-stateful">3.3.6 PitcherHandednessCountStats <em>(stateful)</em></h4>
+<p>Captures the most granular pitcher tendency: pitch mix by pitcher, handedness matchup, and count. For example, a right-handed pitcher facing a left-handed batter in a 0-2 count will throw a very different mix than against a right-handed batter in a 3-1 count.</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>pitcher_hand_count_pct_{type}</code></td>
+<td style="text-align: left;">Pitch distribution per (pitcher, same_hand, count) combination (8 columns)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="337-batterstats-stateful">3.3.7 BatterStats <em>(stateful)</em></h4>
+<p>Learns batter-level aggregate statistics from training data:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>batter_pct_{type}</code></td>
+<td style="text-align: left;">Distribution of pitch types each batter faces (8 columns)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="338-countcategory-stateless">3.3.8 CountCategory <em>(stateless)</em></h4>
+<p>Creates a categorical count state feature:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>count_category</code></td>
+<td style="text-align: left;">One of: <code>first_pitch</code>, <code>ahead</code>, <code>behind</code>, <code>even</code>, or <code>full_count</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="339-preparefeatures-stateful">3.3.9 PrepareFeatures <em>(stateful)</em></h4>
+<p>Selects, encodes, and aligns the final feature matrix:</p>
+<ul>
+<li><strong>22 numeric features</strong> — inning, top, outs, balls, strikes, fouls, pcount_at_bat, pcount_pitcher, at_bat_num, score_diff, total_runs, close_game, late_inning, runner flags, bases_loaded, same_hand, is_first_pitch, b_height_inches, pitcher_n_types</li>
+<li><strong>40 mix features</strong> — all pitcher_pct, pitcher_count_pct, pitcher_hand_pct, pitcher_hand_count_pct, and batter_pct columns (filled with 0 for unseen entities)</li>
+<li><strong>5 categorical features</strong> (one-hot encoded) — p_throws, stand, prev_pitch_type, prev_pitch_type_2, count_category</li>
+</ul>
+<p><strong>Total features:</strong> ~90 (exact count depends on one-hot encoding)</p>
+<hr />
+<h2 id="4-model">4. Model</h2>
+<blockquote>
+<p><em>All model training work lives in the <code>04_model/</code> directory.</em></p>
+</blockquote>
+<h3 id="41-algorithm">4.1 Algorithm</h3>
+<p>I use <strong>XGBoost</strong> (eXtreme Gradient Boosting) — a gradient-boosted decision tree algorithm — with the native API (<code>xgb.train</code> + <code>DMatrix</code>), using the <code>multi:softprob</code> objective. This objective is key: rather than simply predicting a single pitch type, it outputs a <strong>probability distribution across all 8 pitch types</strong> for every prediction (e.g., 42% FF, 22% SL, 15% CH, ...). This directly addresses the assessment goal of predicting the <em>probability</em> of each pitch type.</p>
+<p>A <code>LabelEncoder</code> converts string pitch types (CH, CU, FC, FF, FS, FT, SI, SL) to integer labels 0–7 as required by XGBoost.</p>
+<h3 id="42-hyperparameters">4.2 Hyperparameters</h3>
+<blockquote>
+<p><em>Hyperparameters are settings that control how the model learns, as opposed to what it learns from the data. They must be set before training begins.</em></p>
+</blockquote>
+<p>Given the time constraint, formal hyperparameter tuning (e.g., grid search or Bayesian optimization) and Recursive Feature Elimination (RFE) — a technique that iteratively removes the least important features — were not performed. Instead, I set hyperparameters manually with moderate regularization:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: center;">Value</th>
+<th style="text-align: left;">Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>learning_rate</code></td>
+<td style="text-align: center;">0.03</td>
+<td style="text-align: left;">Conservative learning rate; early stopping controls overfitting</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>max_depth</code></td>
+<td style="text-align: center;">3</td>
+<td style="text-align: left;">Moderate tree depth for feature interactions</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>min_child_weight</code></td>
+<td style="text-align: center;">50</td>
+<td style="text-align: left;">Balances leaf stability with ability to learn minority classes</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>subsample</code></td>
+<td style="text-align: center;">0.7</td>
+<td style="text-align: left;">Row subsampling for variance reduction</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>colsample_bytree</code></td>
+<td style="text-align: center;">0.5</td>
+<td style="text-align: left;">Feature subsampling; important with only 49 features</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>gamma</code></td>
+<td style="text-align: center;">0.5</td>
+<td style="text-align: left;">Minimum loss reduction required per split</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>reg_lambda</code></td>
+<td style="text-align: center;">5</td>
+<td style="text-align: left;">Moderate L2 regularization</td>
+</tr>
+</tbody>
+</table>
+<p>In a production setting, systematic tuning over these parameters and RFE would likely improve performance.</p>
+<h3 id="43-training">4.3 Training</h3>
+<p><strong>Overfitting</strong> occurs when a model learns the training data too well — including its noise and quirks — and as a result performs poorly on new, unseen data. To guard against this, the model uses <strong>early stopping</strong>: it trains on the training set while monitoring performance on the validation set, and automatically stops training when the validation performance stops improving.</p>
+<p>Specifically, the model trains with <code>num_boost_round=1000</code> and <code>early_stopping_rounds=100</code>, selecting the iteration with the minimum validation log-loss (<code>mlogloss</code> — a measure of how well predicted probabilities match actual outcomes).</p>
+<p><strong>Implementation note:</strong> In XGBoost 2.x, <code>model.predict()</code> does <strong>not</strong> automatically use the best iteration after early stopping. All prediction calls must explicitly pass <code>iteration_range=(0, model.best_iteration + 1)</code> to avoid using the fully overfitted model.</p>
+<h3 id="44-overfitting-assessment">4.4 Overfitting Assessment</h3>
+<p>I compute a comprehensive comparison of train, validation, and test metrics (accuracy and log-loss) to assess how well the model generalizes. The train-validation gap and validation-test gap are reported to quantify overfitting. Results are saved to <code>overfitting_metrics.json</code>.</p>
+<h3 id="45-saved-artifacts">4.5 Saved Artifacts</h3>
+<p>All artifacts are saved locally to <code>./output/</code>:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">File</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>xgb_model.json</code></td>
+<td style="text-align: left;">The trained XGBoost model</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>label_encoder.joblib</code></td>
+<td style="text-align: left;">The fitted LabelEncoder</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>best_iteration.json</code></td>
+<td style="text-align: left;">Best iteration number for downstream inference</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>overfitting_metrics.json</code></td>
+<td style="text-align: left;">Train/validation/test accuracy and log-loss with gap analysis</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>test_predictions.csv</code></td>
+<td style="text-align: left;">Test set predictions (probabilities + predicted/actual labels)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>params.json</code></td>
+<td style="text-align: left;">Training parameters and best iteration/score</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="5-model-evaluation">5. Model Evaluation</h2>
+<blockquote>
+<p><em>All evaluation work lives in the <code>05_model_eval/</code> directory.</em></p>
+</blockquote>
+<h3 id="51-overfitting-assessment">5.1 Overfitting Assessment</h3>
+<p><strong>Overfitting</strong> is measured by comparing how well the model performs on data it trained on (train set) versus data it has never seen (validation and test sets). A large gap between train and validation accuracy suggests the model has memorized training patterns rather than learning generalizable rules.</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Split</th>
+<th style="text-align: center;">Accuracy</th>
+<th style="text-align: center;">Log-Loss</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Train</td>
+<td style="text-align: center;">41.0%</td>
+<td style="text-align: center;">1.694</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Validation</td>
+<td style="text-align: center;">30.5%</td>
+<td style="text-align: center;">1.908</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Test</td>
+<td style="text-align: center;">37.1%</td>
+<td style="text-align: center;">1.766</td>
+</tr>
+</tbody>
+</table>
+<p>The train-validation accuracy gap is ~10.6 percentage points. Part of this gap is explained by the validation period (August 23 – September 21) coinciding with MLB's September roster expansion, which introduces many new pitchers not seen during training. The test set (September 22 – October 28, postseason) contains more established pitchers, which is why test accuracy (37.1%) is higher than validation (30.5%).</p>
+<h3 id="52-baseline-comparison">5.2 Baseline Comparison</h3>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Model</th>
+<th style="text-align: center;">Accuracy</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Always predict FF</td>
+<td style="text-align: center;">34.8%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Pitcher mode (most common pitch per pitcher)</td>
+<td style="text-align: center;">45.6%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Pitcher mode per count</td>
+<td style="text-align: center;">47.2%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>XGBoost model</strong></td>
+<td style="text-align: center;"><strong>37.1%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The model beats the naive "always predict FF" baseline by +2.3 percentage points but underperforms the pitcher-mode baselines. Here's why:</p>
+<p>The pitcher-mode baselines are direct lookup tables on pitcher identity (e.g., "pitcher X throws FF 45% of the time"), which is the single strongest predictor of pitch type. I computed pitcher mix features from training targets during preprocessing, but including them in the model caused severe overfitting (a train-validation gap of ~25%) because the model memorized training label distributions. After removing these 40 target-derived features, the model relies on game-situation features (count, handedness, inning, runners, pitch sequencing) that generalize across pitchers but cannot encode individual pitcher repertoires.</p>
+<p><strong>Production recommendation:</strong> In a production setting, the right approach would be to <strong>ensemble</strong> (combine) the pitcher-mode lookup with the ML model's game-context adjustments. The baseline captures <em>what</em> each pitcher throws, while the model captures <em>when</em> pitch selection shifts based on situational factors.</p>
+<h3 id="53-confusion-matrix">5.3 Confusion Matrix</h3>
+<blockquote>
+<p><em>A confusion matrix shows how the model's predictions compare to actual outcomes. Each row represents the true pitch type, and each column represents the predicted pitch type. Correct predictions appear along the diagonal.</em></p>
+</blockquote>
+<p><img src="05_model_eval/output/confusion_matrix.png" alt="Confusion Matrix" /></p>
+<p>Key observations:</p>
+<ul>
+<li><strong>FF</strong> and <strong>SI</strong> have the highest recall (85% and 31%) — meaning the model correctly identifies these pitch types most often.</li>
+<li><strong>Rare types</strong> (FS, CH, CU) have very low recall, as the model defaults to predicting majority classes without pitcher-specific repertoire information.</li>
+<li>The model tends to <strong>over-predict FF</strong> at the expense of off-speed and breaking pitches.</li>
+</ul>
+<h3 id="54-feature-importance">5.4 Feature Importance</h3>
+<p><img src="05_model_eval/output/feature_importance.png" alt="Feature Importance" /></p>
+<p>Top features by gain show which game-situation and count-based features drive pitch type prediction after removing target-derived mix features.</p>
+<h3 id="55-calibration">5.5 Calibration</h3>
+<blockquote>
+<p><em>Calibration measures whether the model's predicted probabilities match reality. For example, when the model says "40% chance of a fastball," a well-calibrated model should be correct about 40% of the time.</em></p>
+</blockquote>
+<p><img src="05_model_eval/output/calibration_plots.png" alt="Calibration Plots" /></p>
+<p>Calibration plots show predicted probability vs. actual frequency by pitch type. Well-calibrated models follow the diagonal line.</p>
+<h3 id="56-prediction-confidence">5.6 Prediction Confidence</h3>
+<p><img src="05_model_eval/output/confidence_analysis.png" alt="Confidence Analysis" /></p>
+<p>The confidence distribution and accuracy-by-confidence analysis show how reliable the model's predictions are at different confidence levels.</p>
+<hr />
+<h2 id="6-next-steps">6. Next Steps</h2>
+<blockquote>
+<p><em>With more time beyond the 4–6 hour window, these are the improvements I would prioritize, roughly in order of expected impact:</em></p>
+</blockquote>
+<ol type="1">
+<li><strong>Pitcher identity encoding without target leakage</strong> — This is the single highest-impact improvement. I would use target encoding with out-of-fold estimates or entity embeddings to capture each pitcher's individual repertoire without memorizing training labels. This would close the gap between the model and the pitcher-mode baselines.</li>
+<li><strong>Ensemble with baselines</strong> — Combine the pitcher-mode lookup (which captures individual repertoire) with the ML model's game-context predictions via weighted averaging or stacking. The baseline knows <em>what</em> each pitcher throws; the model knows <em>when</em> situational factors shift that mix.</li>
+<li><strong>Hyperparameter tuning and RFE</strong> — Systematic tuning (e.g., Bayesian optimization) and Recursive Feature Elimination (RFE) — a technique that iteratively removes the least important features — were skipped due to time but would likely improve performance.</li>
+<li><strong>Alternative models</strong> — LightGBM, CatBoost, or neural network approaches that may capture sequential pitch patterns better.</li>
+<li><strong>Expanded feature engineering</strong> — Pitcher fatigue curves (pitch count vs. typical workload), game-level momentum from score changes, day/night splits, and park effects.</li>
+<li><strong>Cross-validation</strong> — Replace single out-of-time split with rolling-window cross-validation for more robust hyperparameter selection.</li>
+</ol>
+<hr />
+<h2 id="how-to-review">How to Review</h2>
+<p>Each numbered directory contains a Jupyter notebook (<code>.ipynb</code>) with inline markup explaining the analysis, and an HTML export (<code>.html</code>) for review without running any code. I recommend opening the HTML files in a browser for the easiest reading experience.</p>
+<hr />
+<h2 id="project-structure">Project Structure</h2>
+<pre><code>assessment_swish_analytics/
+├── 00_data_collection/          # Raw data and metadata
+│   ├── pitches (S3)
+│   └── pitch_by_pitch_metadata.csv
+├── 01_eda/                      # Exploratory data analysis
+│   ├── notebook.ipynb
+│   ├── notebook.html            # HTML export for easy review
+│   └── output/                  # Saved EDA figures
+├── 02_data_split/               # Train/validation/test split
+│   ├── notebook.ipynb
+│   └── notebook.html
+├── 03_preprocessing/            # Feature engineering pipeline
+│   ├── notebook.ipynb
+│   ├── notebook.html
+│   └── output/                  # Pickled PreprocessingModel
+├── 04_model/                    # XGBoost training
+│   ├── notebook.ipynb
+│   ├── notebook.html
+│   └── output/                  # Model, label encoder, predictions
+├── 05_model_eval/               # Evaluation and diagnostics
+│   ├── notebook.ipynb
+│   ├── notebook.html
+│   └── output/                  # Evaluation figures
+└── README.md                    # This file</code></pre>
+</body>
+</html>
