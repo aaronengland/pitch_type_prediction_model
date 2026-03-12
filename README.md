@@ -229,49 +229,36 @@ A `LabelEncoder` converts string pitch types (CH, CU, FC, FF, FS, FT, SI, SL) to
 
 ### 4.2 Hyperparameters
 
-For the sake of time, formal hyperparameter tuning (e.g., grid search or Bayesian optimization) was not performed. Instead, hyperparameters were set manually with a focus on strong regularization to combat the overfitting observed in early experiments:
+For the sake of time, formal hyperparameter tuning (e.g., grid search or Bayesian optimization) and recursive feature elimination (RFE) were not performed. Instead, hyperparameters were set manually with moderate regularization:
 
 | Parameter | Value | Rationale |
 |---|---|---|
-| learning_rate | 0.02 | Slow learning to avoid early overfitting |
-| max_depth | 2 | Shallow trees to limit model complexity |
-| min_child_weight | 100 | Large leaf sizes to prevent memorization |
-| subsample | 0.6 | Row subsampling for variance reduction |
-| colsample_bytree | 0.4 | Feature subsampling to reduce reliance on dominant features |
-| gamma | 1 | Minimum loss reduction required per split |
-| reg_lambda | 10 | Strong L2 regularization |
+| learning_rate | 0.05 | Moderate learning rate; early stopping controls overfitting |
+| max_depth | 4 | Allows feature interactions without excessive complexity |
+| min_child_weight | 30 | Balances leaf stability with ability to learn minority classes |
+| subsample | 0.7 | Row subsampling for variance reduction |
+| colsample_bytree | 0.6 | Feature subsampling; important with only 49 features |
+| gamma | 0.5 | Minimum loss reduction required per split |
+| reg_lambda | 3 | Moderate L2 regularization |
 
-In a production setting, systematic tuning over these parameters would likely improve performance.
+In a production setting, systematic tuning over these parameters and RFE would likely improve performance.
 
-### 4.3 Recursive Feature Elimination (RFE)
+### 4.3 Training
 
-After selecting the best hyperparameters, RFE is used to iteratively remove low-importance features:
-
-1. Train a model with the best hyperparameters on the current feature set.
-2. Rank features by gain importance.
-3. Drop the 3 lowest-gain features per round.
-4. Stop when validation log-loss doesn't improve for 2 consecutive rounds.
-
-This reduces noise features that contribute to overfitting and improves generalization. The selected feature set is saved to `selected_features.json`.
-
-### 4.4 Training
-
-The final model trains on the training set using the best hyperparameters and RFE-selected features. Early stopping is monitored on the validation set with `num_boost_round=500` and `early_stopping_rounds=50`, selecting the iteration with minimum validation `mlogloss`.
+The model trains on the training set using 49 features (after dropping target-derived mix features). Early stopping is monitored on the validation set with `num_boost_round=1000` and `early_stopping_rounds=100`, selecting the iteration with minimum validation `mlogloss`.
 
 **Important implementation note**: In xgboost 2.x, `model.predict()` does **not** automatically use `best_iteration` after early stopping. All prediction calls must explicitly pass `iteration_range=(0, model.best_iteration + 1)` to avoid using the fully overfitted model.
 
-### 4.5 Overfitting Assessment
+### 4.4 Overfitting Assessment
 
 A comprehensive comparison of train, validation, and test metrics (accuracy and log-loss) is computed to assess generalization. The train-valid gap and valid-test gap are reported to quantify overfitting. Results are saved to `overfitting_metrics.json`.
 
-### 4.6 Saved Artifacts
+### 4.5 Saved Artifacts
 
 All artifacts are saved locally to `./output/`:
 - `xgb_model.json`: The trained XGBoost model.
 - `label_encoder.joblib`: The fitted LabelEncoder.
 - `best_iteration.json`: Best iteration number for downstream inference.
-- `selected_features.json`: Features selected by RFE.
-- `rfe_results.csv`: RFE round-by-round results (features, iterations, validation loss).
 - `overfitting_metrics.json`: Train/valid/test accuracy and log-loss with gap analysis.
 - `test_predictions.csv`: Test set predictions (probabilities + predicted/actual labels).
 - `params.json`: Training parameters and best iteration/score.
@@ -299,7 +286,7 @@ A large train-valid gap indicates overfitting; a small valid-test gap indicates 
 | Always predict FF | 34.8% |
 | Pitcher mode | 45.6% |
 | Pitcher mode per count | 47.2% |
-| **XGBoost (tuned + RFE)** | *updated after run* |
+| **XGBoost** | *updated after run* |
 
 The baseline results are computed from training data and applied to the test set. The ML model must beat the pitcher-mode-per-count baseline (47.2%) to demonstrate value beyond simple lookup tables.
 
@@ -316,7 +303,7 @@ Key observations:
 
 ![Feature Importance](05_model_eval/output/feature_importance.png)
 
-Top features by gain are the pitcher-level mix statistics (pitcher_pct_*, pitcher_count_pct_*), confirming that **pitcher identity and tendencies are the dominant predictors** of pitch type — consistent with EDA findings.
+Top features by gain show which game-situation and count-based features drive pitch type prediction after removing target-derived mix features.
 
 ### 5.5 Calibration
 
@@ -356,9 +343,9 @@ assessment_swish_analytics/
 ├── 03_preprocessing/            # Feature engineering pipeline
 │   ├── notebook.ipynb
 │   └── output/                  # Pickled PreprocessingModel
-├── 04_model/                    # XGBoost training + hyperparameter tuning
+├── 04_model/                    # XGBoost training
 │   ├── notebook.ipynb
-│   └── output/                  # Model, label encoder, predictions, grid search results
+│   └── output/                  # Model, label encoder, predictions
 ├── 05_model_eval/               # Evaluation and diagnostics
 │   ├── notebook.ipynb
 │   └── output/                  # Evaluation figures
