@@ -223,12 +223,14 @@ A grid search is performed over key hyperparameters using early stopping on the 
 
 | Parameter | Search Space |
 |---|---|
-| learning_rate | 0.05, 0.1 |
-| max_depth | 4, 6 |
-| colsample_bytree | 0.7, 0.9 |
-| min_child_weight | 5, 10 |
+| learning_rate | 0.01, 0.02 |
+| max_depth | 2, 3 |
+| min_child_weight | 50, 100 |
+| reg_lambda | 3, 10 |
 
-The best configuration (lowest validation `mlogloss`) is selected. Grid search uses `num_boost_round=500` with `early_stopping_rounds=25`. Results are saved to `grid_search_results.csv`.
+Fixed regularization parameters: `subsample=0.6`, `colsample_bytree=0.4`, `gamma=1`. These are set aggressively to prevent the rapid overfitting observed with weaker regularization.
+
+The best configuration (lowest validation `mlogloss`) is selected. Grid search uses `num_boost_round=1000` with `early_stopping_rounds=50`. Results are saved to `grid_search_results.csv`.
 
 ### 4.3 Recursive Feature Elimination (RFE)
 
