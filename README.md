@@ -273,11 +273,11 @@ Train vs. Validation vs. Test metrics to quantify generalization:
 
 | Split | Accuracy | Log-Loss |
 |---|---|---|
-| Train | *updated after run* | *updated after run* |
-| Validation | *updated after run* | *updated after run* |
-| Test | *updated after run* | *updated after run* |
+| Train | 41.0% | 1.694 |
+| Validation | 30.5% | 1.908 |
+| Test | 37.1% | 1.766 |
 
-A large train-valid gap indicates overfitting; a small valid-test gap indicates the model generalizes consistently to unseen data.
+The train-valid accuracy gap is ~10.6%. Part of this gap is explained by the validation period (Aug 23 - Sep 21) coinciding with MLB September roster expansion, which introduces many new pitchers not seen during training. The test set (Sep 22 - Oct 28, postseason) contains more established pitchers, which is why test accuracy (37.1%) is higher than validation (30.5%).
 
 ### 5.2 Baseline Comparison
 
@@ -286,18 +286,20 @@ A large train-valid gap indicates overfitting; a small valid-test gap indicates 
 | Always predict FF | 34.8% |
 | Pitcher mode | 45.6% |
 | Pitcher mode per count | 47.2% |
-| **XGBoost** | *updated after run* |
+| **XGBoost** | **37.1%** |
 
-The baseline results are computed from training data and applied to the test set. The ML model must beat the pitcher-mode-per-count baseline (47.2%) to demonstrate value beyond simple lookup tables.
+The model beats the naive "always predict FF" baseline by +2.3 pp but underperforms the pitcher-mode baselines. This is expected: the pitcher-mode baselines are direct lookup tables on pitcher identity (e.g., "pitcher X throws FF 45% of the time"), which is the single strongest predictor of pitch type. The preprocessing pipeline computes these pitcher mix features from training targets, but including them in the model causes severe overfitting (train-valid gap of ~25%) because the model memorizes training label distributions. After removing these 40 target-derived features, the model relies on game-situation features (count, handedness, inning, runners, pitch sequencing) that generalize across pitchers but cannot encode individual pitcher repertoires.
+
+In a production setting, the right approach would be to **ensemble** the pitcher-mode lookup with the ML model's game-context adjustments — the baseline captures *what* each pitcher throws, while the model captures *when* pitch selection shifts based on situational factors.
 
 ### 5.3 Confusion Matrix
 
 ![Confusion Matrix](05_model_eval/output/confusion_matrix.png)
 
 Key observations:
-- FF and SI have the highest recall (65% and 56%).
-- Rare types (FS, CH, CU) have very low recall (<15%).
-- The model tends to over-predict FF and SI at the expense of off-speed pitches.
+- FF and SI have the highest recall (85% and 31%).
+- Rare types (FS, CH, CU) have very low recall, as the model defaults to predicting majority classes without pitcher-specific repertoire information.
+- The model tends to over-predict FF at the expense of off-speed and breaking pitches.
 
 ### 5.4 Feature Importance
 
@@ -321,10 +323,12 @@ The confidence distribution and accuracy-by-confidence analysis show how reliabl
 
 ## 6. Next Steps
 
-1. **Alternative models**: LightGBM, CatBoost, or neural network approaches that may capture sequential pitch patterns better.
-2. **Ensemble**: Combine model predictions with the pitcher-mode-per-count baseline (e.g., weighted average or stacking).
-3. **Expanded feature engineering**: Pitcher fatigue curves (pitch count vs. typical workload), game-level momentum from score changes, day/night splits, and park effects.
-4. **Cross-validation**: Replace single out-of-time split with rolling-window cross-validation for more robust hyperparameter selection.
+1. **Pitcher identity encoding without target leakage**: Use target encoding with out-of-fold estimates or entity embeddings to capture pitcher repertoire without memorizing training labels.
+2. **Ensemble with baselines**: Combine the pitcher-mode lookup (which captures individual repertoire) with the ML model's game-context predictions via weighted averaging or stacking.
+3. **Hyperparameter tuning and RFE**: Systematic tuning (e.g., Bayesian optimization) and recursive feature elimination were skipped for time but would likely improve performance.
+4. **Alternative models**: LightGBM, CatBoost, or neural network approaches that may capture sequential pitch patterns better.
+5. **Expanded feature engineering**: Pitcher fatigue curves (pitch count vs. typical workload), game-level momentum from score changes, day/night splits, and park effects.
+6. **Cross-validation**: Replace single out-of-time split with rolling-window cross-validation for more robust hyperparameter selection.
 
 ---
 
