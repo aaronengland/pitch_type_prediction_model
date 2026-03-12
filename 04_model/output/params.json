@@ -11,7 +11,7 @@
   "reg_lambda": 10,
   "seed": 42,
   "verbosity": 0,
-  "best_iteration": 41,
-  "best_score": 1.9755236267660596,
-  "n_features_selected": 89
+  "best_iteration": 105,
+  "best_score": 1.891127730103767,
+  "n_features_selected": 49
 }
