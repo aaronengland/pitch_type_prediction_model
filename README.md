@@ -227,20 +227,21 @@ Selects, encodes, and aligns the final feature matrix:
 
 A `LabelEncoder` converts string pitch types (CH, CU, FC, FF, FS, FT, SI, SL) to integer labels 0-7 as required by XGBoost's `DMatrix`.
 
-### 4.2 Hyperparameter Tuning
+### 4.2 Hyperparameters
 
-A grid search is performed over key hyperparameters using early stopping on the validation set:
+For the sake of time, formal hyperparameter tuning (e.g., grid search or Bayesian optimization) was not performed. Instead, hyperparameters were set manually with a focus on strong regularization to combat the overfitting observed in early experiments:
 
-| Parameter | Search Space |
-|---|---|
-| learning_rate | 0.01, 0.02 |
-| max_depth | 2, 3 |
-| min_child_weight | 50, 100 |
-| reg_lambda | 3, 10 |
+| Parameter | Value | Rationale |
+|---|---|---|
+| learning_rate | 0.02 | Slow learning to avoid early overfitting |
+| max_depth | 2 | Shallow trees to limit model complexity |
+| min_child_weight | 100 | Large leaf sizes to prevent memorization |
+| subsample | 0.6 | Row subsampling for variance reduction |
+| colsample_bytree | 0.4 | Feature subsampling to reduce reliance on dominant features |
+| gamma | 1 | Minimum loss reduction required per split |
+| reg_lambda | 10 | Strong L2 regularization |
 
-Fixed regularization parameters: `subsample=0.6`, `colsample_bytree=0.4`, `gamma=1`. These are set aggressively to prevent the rapid overfitting observed with weaker regularization.
-
-The best configuration (lowest validation `mlogloss`) is selected. Grid search uses `num_boost_round=1000` with `early_stopping_rounds=50`. Results are saved to `grid_search_results.csv`.
+In a production setting, systematic tuning over these parameters would likely improve performance.
 
 ### 4.3 Recursive Feature Elimination (RFE)
 
@@ -274,7 +275,6 @@ All artifacts are saved locally to `./output/`:
 - `overfitting_metrics.json`: Train/valid/test accuracy and log-loss with gap analysis.
 - `test_predictions.csv`: Test set predictions (probabilities + predicted/actual labels).
 - `params.json`: Training parameters and best iteration/score.
-- `grid_search_results.csv`: All hyperparameter configurations and their validation scores.
 
 ---
 
