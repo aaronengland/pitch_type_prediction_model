@@ -233,13 +233,13 @@ For the sake of time, formal hyperparameter tuning (e.g., grid search or Bayesia
 
 | Parameter | Value | Rationale |
 |---|---|---|
-| learning_rate | 0.05 | Moderate learning rate; early stopping controls overfitting |
-| max_depth | 4 | Allows feature interactions without excessive complexity |
-| min_child_weight | 30 | Balances leaf stability with ability to learn minority classes |
+| learning_rate | 0.03 | Conservative learning rate; early stopping controls overfitting |
+| max_depth | 3 | Moderate tree depth for feature interactions |
+| min_child_weight | 50 | Balances leaf stability with ability to learn minority classes |
 | subsample | 0.7 | Row subsampling for variance reduction |
-| colsample_bytree | 0.6 | Feature subsampling; important with only 49 features |
+| colsample_bytree | 0.5 | Feature subsampling; important with only 49 features |
 | gamma | 0.5 | Minimum loss reduction required per split |
-| reg_lambda | 3 | Moderate L2 regularization |
+| reg_lambda | 5 | Moderate L2 regularization |
 
 In a production setting, systematic tuning over these parameters and RFE would likely improve performance.
 
