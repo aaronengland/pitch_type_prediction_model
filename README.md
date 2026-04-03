@@ -2,15 +2,15 @@
 
 ## About This Project
 
-This project was completed as a take-home assessment for Swish Analytics. The goal is to predict the **probability** that the next thrown pitch will be a fastball, slider, changeup, curveball, or other pitch type — using pitch-by-pitch data from the 2011 MLB season. The model outputs a full probability distribution across all 8 pitch types for each prediction, not just a single class label.
+In this project, I built a model to predict **what type of pitch a baseball pitcher will throw next** — and how likely each option is. Using pitch-by-pitch data from the entire 2011 MLB season, my model looks at the current game situation (the count, who's batting, what inning it is, etc.) and outputs a probability for each of 8 pitch types. For example, it might say: "There's a 42% chance the next pitch is a fastball, a 22% chance it's a slider, a 15% chance it's a changeup..." and so on.
 
-This is a **multi-class classification problem** — a type of prediction where the model chooses between more than two possible outcomes. Given the game situation and pitcher/batter context known **prior to the pitch being thrown**, the model estimates how likely each pitch type is.
+Rather than simply guessing one pitch type, my model provides a **full set of probabilities** — giving a much richer picture of what to expect.
 
-Each step of the analysis is organized into its own directory with a Python notebook (`.ipynb`) and an accompanying HTML export for easy review. Markup text within each notebook explains the analysis, graphs, and decisions at each stage.
-
-> *Given the 4–6 hour time constraint, I focused my time on thorough EDA, a leakage-aware preprocessing pipeline, and honest model evaluation — rather than chasing maximum accuracy through extensive tuning. The [Next Steps](#6-next-steps) section outlines what I would pursue with additional time.*
+I organized each step of the analysis into its own folder with a Python notebook and an accompanying HTML export for easy review. The text within each notebook explains my analysis, graphs, and decisions at each stage.
 
 ### Pitch Type Abbreviations
+
+Throughout this project, pitch types are referred to by their standard abbreviations:
 
 | Abbreviation | Pitch Type |
 |:---:|:---|
@@ -35,19 +35,23 @@ Each step of the analysis is organized into its own directory with a Python note
 
 ---
 
-## 1. Exploratory Data Analysis (EDA)
+## 1. Exploring the Data
 
-> *All EDA work lives in the `01_eda/` directory.*
+> *All exploratory work lives in the `01_eda/` directory.*
 
-### 1.1 Dataset Description
+Before building any model, my first step was to understand the data — what it contains, what's missing, and what patterns are already visible.
 
-The raw dataset contains 718,961 rows and 125 columns. After filtering to non-null pitch types and the 8 main pitch types listed above, 698,318 pitches remain. The overall missing rate across all columns is approximately 45%, primarily driven by runner-related columns (runners 4–7 are virtually never populated) and PITCHf/x measurement columns — sensor-derived metrics that are only available *after* the pitch is thrown.
+### 1.1 What's in the Dataset?
+
+The raw dataset contains 718,961 pitches and 125 columns of information about each one. After I removed pitches with missing or uncommon pitch types, 698,318 pitches across the 8 main types remained.
+
+About 45% of data points across all columns are missing, but this is not as alarming as it sounds. Most of the missing values come from columns that are rarely relevant (e.g., data about the 5th, 6th, or 7th baserunner in an inning — an extremely rare scenario) and from sensor measurements that are only recorded *after* the pitch is thrown. The information available *before* the pitch — which is what I use for modeling — is largely complete.
 
 ### 1.2 Data Types
 
 ![Column Frequency by Data Type](01_eda/output/dtype_freq.png)
 
-The dataset is predominantly numeric (`float64` and `int64` columns), with a smaller number of string columns for identifiers, timestamps, and categorical fields.
+Most columns contain numbers (scores, counts, measurements), with a smaller number containing text (player names, dates, categories).
 
 ### 1.3 Missing Data
 
@@ -55,115 +59,121 @@ The dataset is predominantly numeric (`float64` and `int64` columns), with a sma
 
 ![Proportion Missing — Missing Columns Only](01_eda/output/propna_missing_only.png)
 
-Most missing values are concentrated in runner event columns (runners 4–7 are always null because they represent rare baserunning scenarios) and PITCHf/x measurement columns. The features available *prior* to the pitch — the ones I use for modeling — have minimal missingness.
+These charts show which columns have missing values and how much is missing. The columns I used for prediction have very little missing data.
 
-### 1.4 Target Distribution
+### 1.4 How Often Is Each Pitch Thrown?
 
 ![Pitch Type Distribution](01_eda/output/target_distribution.png)
 
-The **target** (the variable the model is trying to predict) is imbalanced: Four-seam Fastball (FF) dominates at ~34%, followed by Slider (SL) at ~16% and Sinker (SI) at ~13%. Splitter (FS) is the rarest at ~1.5%.
+The pitch types are not evenly distributed. Four-seam fastballs (FF) are by far the most common at ~34% of all pitches, while splitters (FS) are the rarest at ~1.5%. This imbalance is important — a model could appear to be 34% accurate just by guessing "fastball" every time, so I needed to keep this in mind when evaluating performance.
 
 ### 1.5 Pitch Type by Count
 
-> *The "count" refers to the current ball-strike count during an at-bat (e.g., 3-2 means 3 balls and 2 strikes).*
+> *The "count" is the current number of balls and strikes in an at-bat. For example, a 3-2 count means 3 balls and 2 strikes — a "full count."*
 
 ![Pitch Type by Count](01_eda/output/pitch_type_by_count.png)
 
 Pitch selection changes dramatically depending on the count:
 
-- **Pitcher-ahead counts** (0-2, 1-2) — More breaking balls (SL, CU) and off-speed pitches (CH), since the pitcher can afford to throw pitches outside the strike zone.
-- **Hitter-ahead counts** (3-0, 3-1) — Predominantly fastballs (FF, FT, SI) because the pitcher needs to throw strikes.
-- **Full count** (3-2) — The mix shifts toward fastballs, but breaking balls remain present.
+- **When the pitcher is ahead** (e.g., 0-2, 1-2) — Pitchers can afford to throw trickier pitches like sliders and curveballs, since they have strikes to spare.
+- **When the hitter is ahead** (e.g., 3-0, 3-1) — Pitchers mostly throw fastballs because they need to throw a strike and avoid walking the batter.
+- **Full count** (3-2) — The mix shifts toward fastballs, but breaking pitches are still in play.
 
 ### 1.6 Pitch Type by Handedness Matchup
 
-> *The "platoon advantage" describes the tendency for batters to perform better against opposite-hand pitchers (e.g., a left-handed batter vs. a right-handed pitcher).*
+> *In baseball, batters tend to perform better against pitchers who throw from the opposite side (e.g., a left-handed batter vs. a right-handed pitcher). This is called the "platoon advantage," and it influences which pitches a pitcher chooses to throw.*
 
 ![Pitch Type by Handedness](01_eda/output/pitch_type_by_handedness.png)
 
-The platoon advantage significantly impacts pitch mix. Pitchers throw different combinations against same-hand vs. opposite-hand batters — for example, more sliders to same-hand batters and more changeups to opposite-hand batters.
+Pitchers adjust their pitch selection based on whether the batter hits from the same side or the opposite side. For example, pitchers tend to throw more sliders to same-side batters and more changeups to opposite-side batters.
 
 ### 1.7 Pitch Type by Outs
 
 ![Pitch Type by Outs](01_eda/output/pitch_type_by_outs.png)
 
-Pitch mix remains relatively stable across 0, 1, and 2 outs, with only minor shifts.
+The number of outs (0, 1, or 2) has only a minor effect on pitch selection.
 
-### 1.8 Pitcher Repertoire Diversity
+### 1.8 How Many Pitch Types Does Each Pitcher Throw?
 
 ![Pitch Types per Pitcher](01_eda/output/pitch_types_per_pitcher.png)
 
-Most pitchers throw 3–5 distinct pitch types. A few specialists throw only 2, while some have a 6+ pitch repertoire.
+Most pitchers throw 3–5 distinct pitch types. A few specialists rely on just 2, while some have a 6+ pitch arsenal.
 
-### 1.9 Top Pitcher Pitch Mix
+### 1.9 Pitch Mix of Top Pitchers
 
 ![Top Pitchers Mix](01_eda/output/top_pitchers_mix.png)
 
-The top 20 pitchers by volume show highly individual pitch mixes — some are fastball-dominant (~60%+ FF), while others rely on sliders or sinkers as their primary pitch. This reinforces that **pitcher identity is the strongest predictor** of pitch type.
+The top 20 pitchers by volume show highly individual pitch mixes. Some are fastball-dominant (60%+ fastballs), while others rely heavily on sliders or sinkers. This highlights a key insight: **knowing who the pitcher is tells you a lot about what pitch is coming next**.
 
 ### 1.10 Pitch Type by Inning
 
 ![Pitch Type by Inning](01_eda/output/pitch_type_by_inning.png)
 
-Pitch mix is relatively stable across innings 1–9, with subtle shifts as games progress (slightly more fastballs early).
+Pitch mix is relatively stable across innings 1–9, with only subtle shifts as games progress (slightly more fastballs early on).
 
 ### 1.11 Pitch Type by Runners on Base
 
 ![Pitch Type by Runners](01_eda/output/pitch_type_by_runners.png)
 
-With runners on base, pitchers tend to slightly adjust their mix — for example, more sinkers and two-seamers to induce ground balls for double plays.
+With runners on base, pitchers tend to slightly adjust their mix — for example, throwing more sinkers and two-seam fastballs to try to induce ground balls for double plays.
 
-### 1.12 Pitch Type by Pitcher Pitch Count
+### 1.12 Pitch Type by Pitcher Fatigue
 
 ![Pitch Type by Pitch Count](01_eda/output/pitch_type_by_pitch_count.png)
 
-As a pitcher's pitch count climbs through the game, the pitch mix shifts modestly. Pitchers may lean more on their primary pitch as fatigue sets in.
+As a pitcher throws more pitches during a game, their pitch mix shifts modestly. Pitchers may lean more on their go-to pitch as fatigue sets in.
 
 ### 1.13 First Pitch vs. Later Pitches
 
 ![First Pitch vs Later](01_eda/output/first_pitch_vs_later.png)
 
-Fastballs are overrepresented on the first pitch of an at-bat, while breaking balls and off-speed pitches become more common on subsequent pitches.
+Fastballs are disproportionately common on the first pitch of an at-bat, while breaking balls and off-speed pitches appear more frequently on later pitches.
 
 ### 1.14 Temporal Coverage
 
 ![Pitches per Month](01_eda/output/pitches_per_month.png)
 
-The season spans March through October, with April–September being the core months. October contains fewer pitches (postseason only).
+The season spans March through October, with April–September as the core months. October contains fewer pitches (postseason only).
 
-### 1.15 Baseline Accuracies
+### 1.15 Simple Baselines
 
-I computed three baselines to set expectations for model performance:
+Before building my machine learning model, I established simple "baselines" — straightforward rules of thumb to set expectations for what counts as good performance:
 
-| Baseline | Accuracy |
+| Baseline Strategy | Accuracy |
 |:---|:---:|
-| Always predict FF (most common pitch) | 34.2% |
-| Predict each pitcher's most common pitch | 47.4% |
-| Predict pitcher's most common pitch per count | 50.1% |
+| Always guess fastball (the most common pitch) | 34.2% |
+| Always guess each pitcher's most common pitch | 47.4% |
+| Guess each pitcher's most common pitch for the current count | 50.1% |
 
-**Key takeaway:** Pitcher identity combined with the count alone gets to ~50% accuracy. This sets a high bar — any ML model needs to either beat these baselines or add value through better-calibrated probability estimates, which is ultimately what the assessment asks for.
+**Key takeaway:** Just knowing who the pitcher is and what the count is gets you to ~50% accuracy. This set a high bar for my model — I needed to either beat these simple rules or add value in other ways (like providing well-calibrated probabilities rather than a single guess).
 
 ---
 
-## 2. Data Split
+## 2. Splitting the Data
 
 > *All data split work lives in the `02_data_split/` directory.*
 
-### 2.1 Approach
+### 2.1 Why the Split Matters
 
-**Look-ahead bias** occurs when a model is trained using information that would not have been available at the time of prediction — for example, training on September games and then predicting August games. To avoid this, I use an **out-of-time split**, which simulates real-world deployment by training on past data and predicting future pitches. The data is sorted chronologically and split by date:
+To honestly evaluate a prediction model, you can't test it on the same data it learned from — that would be like letting a student see the exam answers before the test. The model needs to be tested on data it has never seen.
 
-| Split | Date Range | Rows | Percentage |
+I also needed to avoid a subtler problem: **look-ahead bias**. If the model trains on September games and is then tested on August games, it could unknowingly benefit from patterns that hadn't yet emerged in August. To prevent this, I split the data **chronologically** — the model trains on earlier games and is tested on later ones, just like a real prediction system would work:
+
+| Split | Date Range | Pitches | Percentage |
 |:---|:---|:---:|:---:|
-| Train | March 31 – August 22, 2011 | 538,294 | 77.1% |
+| Training | March 31 – August 22, 2011 | 538,294 | 77.1% |
 | Validation | August 23 – September 21, 2011 | 120,479 | 17.3% |
 | Test | September 22 – October 28, 2011 | 39,545 | 5.7% |
 
+- **Training set** — The model learns from this data.
+- **Validation set** — Used during training to monitor whether the model is improving or starting to memorize. Helps decide when to stop training.
+- **Test set** — Held out entirely until the very end. Provides the final, unbiased measure of model performance.
+
 ### 2.2 Distribution Stability
 
-Pitch type distributions are consistent across splits (within 1–2 percentage points), confirming no major distributional drift within the season:
+The pitch type distributions are consistent across all three splits (within 1–2 percentage points), confirming that pitch behavior didn't change drastically over the season:
 
-| Pitch Type | Train | Validation | Test |
+| Pitch Type | Training | Validation | Test |
 |:---:|:---:|:---:|:---:|
 | FF | 33.9% | 35.2% | 34.8% |
 | SL | 15.8% | 15.7% | 15.2% |
@@ -176,286 +186,232 @@ Pitch type distributions are consistent across splits (within 1–2 percentage p
 
 ---
 
-## 3. Preprocessing
+## 3. Preparing the Data for the Model
 
 > *All preprocessing work lives in the `03_preprocessing/` directory.*
 
-### 3.1 Architecture
+Raw data rarely comes in a form that a machine learning model can use directly. In this section, I describe how I transformed the raw pitch data into a clean set of **features** — the specific pieces of information my model uses to make predictions.
 
-**Data leakage** happens when information from outside the training set (such as validation or test data) accidentally influences the model during training, resulting in overly optimistic performance estimates. To prevent this, I use a **class-based fit/transform pattern**:
+### 3.1 Avoiding Data Leakage
 
-1. Each preprocessing step is a Python class with `fit(X)` and `transform(X)` methods.
-2. `fit` learns parameters from training data **only** — preventing data leakage.
-3. `transform` applies the learned transformation to any split (train, validation, or test).
-4. All fitted transformers are collected into a `PreprocessingModel` wrapper and serialized (saved to disk) with `joblib`.
+**Data leakage** is one of the most important pitfalls in machine learning. It happens when information that wouldn't be available at prediction time accidentally sneaks into the model during training, making the model appear better than it really is.
 
-### 3.2 Bayesian Smoothing
+To prevent this, I ensured that every transformation that learns something from the data (like computing a pitcher's average pitch mix) is learned **only from the training set**. I then applied those learned values identically to the validation and test sets — ensuring the model never gets an unfair advantage.
 
-> *"Target leakage" is a specific form of data leakage where the model gains access to the target variable (the thing it's trying to predict) during training in a way that wouldn't be available at prediction time.*
+### 3.2 Smoothing Pitcher and Batter Statistics
 
-All pitch mix features (pitcher, pitcher-count, pitcher-handedness, pitcher-handedness-count, and batter) use **Bayesian smoothing** to address target leakage. Raw proportions computed from training targets would create an information advantage on training data. Smoothing blends each entity's rates toward the global average:
+When computing pitcher-level statistics (like "this pitcher throws 40% fastballs"), pitchers with very few pitches in the training data can produce unreliable statistics. A pitcher who has thrown just 5 pitches might appear to throw 100% fastballs simply by chance.
 
-```
-smoothed_pct = (count + alpha * global_pct) / (total + alpha)
-```
+To handle this, I use **Bayesian smoothing** — a technique that blends each pitcher's individual statistics with the league-wide average. Pitchers with many pitches keep their true tendencies, while pitchers with few pitches are pulled toward the league average. This also provides sensible defaults for pitchers who appear in the validation or test sets but weren't in the training data (e.g., September call-ups).
 
-With `alpha=50`, high-volume pitchers keep their true tendencies while low-sample and unseen entities are regularized (pulled back) toward the league-wide pitch distribution. This reduces the train-validation gap and provides reasonable defaults for September call-ups and other unseen players.
+### 3.3 Features Used by the Model
 
-### 3.3 Transformer Pipeline
+My model uses approximately 90 features, organized into several categories:
 
-The transformers are applied in the following order:
+#### Game Situation Features
 
-#### 3.3.1 SituationFeatures *(stateless)*
+Information about the current state of the game that any fan watching could observe:
 
-Creates game-situation features from pre-pitch columns:
+- **Score difference** — Is the pitching team ahead or behind, and by how much?
+- **Runners on base** — Which bases are occupied? Are the bases loaded?
+- **Handedness matchup** — Are the pitcher and batter on the same side (e.g., both right-handed) or opposite sides?
+- **First pitch of the at-bat** — Pitchers often approach the first pitch differently.
+- **Batter height** — Taller and shorter batters present different strike zones.
 
-| Feature | Description |
-|:---|:---|
-| `score_diff` | Score differential from pitching team's perspective |
-| `on_1b_flag`, `on_2b_flag`, `on_3b_flag` | Binary runner indicators (1 = runner on base, 0 = empty) |
-| `runners_on` | Total runners on base |
-| `bases_loaded` | All three bases occupied — a high-leverage situation that shifts pitch selection toward ground-ball pitches |
-| `same_hand` | Whether pitcher and batter share handedness (the platoon indicator) |
-| `is_first_pitch` | First pitch of the at-bat (1) or not (0) |
-| `b_height_inches` | Batter height converted from string (e.g., "6-2") to inches (e.g., 74) |
+#### Pitch Sequencing Features
 
-#### 3.3.2 LagFeatures *(stateless)*
+What happened earlier in this at-bat:
 
-Creates within-at-bat pitch sequencing features:
+- **Previous pitch type** — What was the last pitch thrown in this at-bat?
+- **Two pitches ago** — What was thrown two pitches back? Pitchers often avoid repeating the same pitch multiple times in a row.
 
-| Feature | Description |
-|:---|:---|
-| `prev_pitch_type` | The previous pitch thrown in this at-bat (`'NONE'` for first pitch) |
-| `prev_pitch_type_2` | The pitch thrown two pitches ago (`'NONE'` if unavailable) |
+#### Game Context Features
 
-#### 3.3.3 GameContextFeatures *(stateless)*
+Broader context about the game state:
 
-Creates broader game-context features:
+- **Total runs scored** — How many runs have been scored in the game so far?
+- **Close game indicator** — Is the score within 2 runs? Pitchers tend to be more careful in tight games.
+- **Late inning indicator** — Is it the 7th inning or later? Late-game situations often shift pitch selection.
 
-| Feature | Description |
-|:---|:---|
-| `total_runs` | Total runs scored in the game so far (away + home) |
-| `close_game` | Whether the game is close (`\|score_diff\| <= 2`) — pitchers pitch more carefully in tight games |
-| `late_inning` | Whether the game is in inning 7 or later — late-game, high-leverage situations influence pitch selection |
+#### Pitcher Tendency Features
 
-#### 3.3.4 PitcherStats *(stateful)*
+Historical statistics about how each pitcher tends to pitch, which I computed from the training data:
 
-Learns pitcher-level aggregate statistics from training data:
+- **Overall pitch mix** — What percentage of each pitch type does this pitcher throw?
+- **Pitch mix by count** — How does this pitcher's mix change in different counts?
+- **Pitch mix by handedness** — How does this pitcher adjust against same-side vs. opposite-side batters?
+- **Pitch mix by handedness and count** — The most detailed breakdown: how does this pitcher pitch against a specific handedness matchup in a specific count?
+- **Number of pitch types** — How many different pitches does this pitcher throw?
 
-| Feature | Description |
-|:---|:---|
-| `pitcher_pct_{type}` | Each pitcher's overall pitch type distribution (8 columns, one per pitch type) |
-| `pitcher_count_pct_{type}` | Pitcher's pitch distribution per ball-strike count (8 columns) |
-| `pitcher_n_types` | Number of distinct pitch types in the pitcher's repertoire |
+#### Batter Tendency Features
 
-#### 3.3.5 PitcherHandednessStats *(stateful)*
+- **Pitch mix faced** — What types of pitches does this batter typically see? Some batters attract more breaking balls than others.
 
-Learns pitcher pitch mix conditioned on batter handedness:
+#### Count Category
 
-| Feature | Description |
-|:---|:---|
-| `pitcher_hand_pct_{type}` | Pitch distribution per (pitcher, same_hand) combination (8 columns) |
-
-#### 3.3.6 PitcherHandednessCountStats *(stateful)*
-
-Captures the most granular pitcher tendency: pitch mix by pitcher, handedness matchup, and count. For example, a right-handed pitcher facing a left-handed batter in a 0-2 count will throw a very different mix than against a right-handed batter in a 3-1 count.
-
-| Feature | Description |
-|:---|:---|
-| `pitcher_hand_count_pct_{type}` | Pitch distribution per (pitcher, same_hand, count) combination (8 columns) |
-
-#### 3.3.7 BatterStats *(stateful)*
-
-Learns batter-level aggregate statistics from training data:
-
-| Feature | Description |
-|:---|:---|
-| `batter_pct_{type}` | Distribution of pitch types each batter faces (8 columns) |
-
-#### 3.3.8 CountCategory *(stateless)*
-
-Creates a categorical count state feature:
-
-| Feature | Description |
-|:---|:---|
-| `count_category` | One of: `first_pitch`, `ahead`, `behind`, `even`, or `full_count` |
-
-#### 3.3.9 PrepareFeatures *(stateful)*
-
-Selects, encodes, and aligns the final feature matrix:
-
-- **22 numeric features** — inning, top, outs, balls, strikes, fouls, pcount_at_bat, pcount_pitcher, at_bat_num, score_diff, total_runs, close_game, late_inning, runner flags, bases_loaded, same_hand, is_first_pitch, b_height_inches, pitcher_n_types
-- **40 mix features** — all pitcher_pct, pitcher_count_pct, pitcher_hand_pct, pitcher_hand_count_pct, and batter_pct columns (filled with 0 for unseen entities)
-- **5 categorical features** (one-hot encoded) — p_throws, stand, prev_pitch_type, prev_pitch_type_2, count_category
-
-**Total features:** ~90 (exact count depends on one-hot encoding)
+A simplified grouping of the ball-strike count into categories: first pitch, pitcher ahead, hitter ahead, even count, or full count.
 
 ---
 
-## 4. Model
+## 4. Building the Model
 
 > *All model training work lives in the `04_model/` directory.*
 
 ### 4.1 Algorithm
 
-I use **XGBoost** (eXtreme Gradient Boosting) — a gradient-boosted decision tree algorithm — with the native API (`xgb.train` + `DMatrix`), using the `multi:softprob` objective. This objective is key: rather than simply predicting a single pitch type, it outputs a **probability distribution across all 8 pitch types** for every prediction (e.g., 42% FF, 22% SL, 15% CH, ...). This directly addresses the assessment goal of predicting the *probability* of each pitch type.
+I used **XGBoost** (eXtreme Gradient Boosting), a widely-used machine learning algorithm that builds predictions by combining many simple decision trees. Think of each decision tree as a flowchart of yes/no questions about the game situation (e.g., "Is the count 0-2?" → "Is the pitcher right-handed?" → "Was the last pitch a slider?"). XGBoost combines hundreds of these small flowcharts together to make a final prediction.
 
-A `LabelEncoder` converts string pitch types (CH, CU, FC, FF, FS, FT, SI, SL) to integer labels 0–7 as required by XGBoost.
+Crucially, my model doesn't just predict a single pitch type — it outputs **probabilities for all 8 pitch types** on every prediction. This gives a much more useful and nuanced answer than simply saying "fastball."
 
-### 4.2 Hyperparameters
+### 4.2 Model Settings
 
-> *Hyperparameters are settings that control how the model learns, as opposed to what it learns from the data. They must be set before training begins.*
+Machine learning models have settings (called **hyperparameters**) that control how the model learns. I set these conservatively to prioritize a model that generalizes well to new data over one that memorizes the training data:
 
-Given the time constraint, formal hyperparameter tuning (e.g., grid search or Bayesian optimization) and Recursive Feature Elimination (RFE) — a technique that iteratively removes the least important features — were not performed. Instead, I set hyperparameters manually with moderate regularization:
-
-| Parameter | Value | Rationale |
+| Setting | Value | What It Controls |
 |:---|:---:|:---|
-| `learning_rate` | 0.03 | Conservative learning rate; early stopping controls overfitting |
-| `max_depth` | 3 | Moderate tree depth for feature interactions |
-| `min_child_weight` | 50 | Balances leaf stability with ability to learn minority classes |
-| `subsample` | 0.7 | Row subsampling for variance reduction |
-| `colsample_bytree` | 0.5 | Feature subsampling; important with only 49 features |
-| `gamma` | 0.5 | Minimum loss reduction required per split |
-| `reg_lambda` | 5 | Moderate L2 regularization |
+| Learning rate | 0.03 | How quickly the model adapts — slower is more careful |
+| Max tree depth | 3 | How many questions each decision tree can ask — shallower trees are simpler |
+| Min samples per leaf | 50 | How much data a decision tree needs before making a conclusion |
+| Row sampling | 70% | Each tree only sees 70% of the data, reducing overfitting |
+| Feature sampling | 50% | Each tree only considers half the features, adding diversity |
+| Split threshold | 0.5 | How much improvement is needed before adding a new question |
+| Regularization | 5 | Penalizes overly complex trees to keep predictions stable |
 
-In a production setting, systematic tuning over these parameters and RFE would likely improve performance.
+With more time, these settings could be systematically optimized to improve performance.
 
-### 4.3 Training
+### 4.3 Training Process
 
-**Overfitting** occurs when a model learns the training data too well — including its noise and quirks — and as a result performs poorly on new, unseen data. To guard against this, the model uses **early stopping**: it trains on the training set while monitoring performance on the validation set, and automatically stops training when the validation performance stops improving.
+A common problem in machine learning is **overfitting** — when the model memorizes the training data so well that it performs poorly on new, unseen data. It's like a student who memorizes practice exam answers word-for-word but can't answer rephrased questions.
 
-Specifically, the model trains with `num_boost_round=1000` and `early_stopping_rounds=100`, selecting the iteration with the minimum validation log-loss (`mlogloss` — a measure of how well predicted probabilities match actual outcomes).
+To prevent this, I used **early stopping**: during training, my model continuously checks its performance on the validation set (data it hasn't trained on). If the validation performance stops improving for 100 consecutive rounds, training automatically stops. This ensures the model learns useful patterns without memorizing noise.
 
-**Implementation note:** In XGBoost 2.x, `model.predict()` does **not** automatically use the best iteration after early stopping. All prediction calls must explicitly pass `iteration_range=(0, model.best_iteration + 1)` to avoid using the fully overfitted model.
+### 4.4 Saved Outputs
 
-### 4.4 Overfitting Assessment
-
-I compute a comprehensive comparison of train, validation, and test metrics (accuracy and log-loss) to assess how well the model generalizes. The train-validation gap and validation-test gap are reported to quantify overfitting. Results are saved to `overfitting_metrics.json`.
-
-### 4.5 Saved Artifacts
-
-All artifacts are saved locally to `./output/`:
-
-| File | Description |
-|:---|:---|
-| `xgb_model.json` | The trained XGBoost model |
-| `label_encoder.joblib` | The fitted LabelEncoder |
-| `best_iteration.json` | Best iteration number for downstream inference |
-| `overfitting_metrics.json` | Train/validation/test accuracy and log-loss with gap analysis |
-| `test_predictions.csv` | Test set predictions (probabilities + predicted/actual labels) |
-| `params.json` | Training parameters and best iteration/score |
+I saved the trained model and supporting files to the `04_model/output/` directory for use in evaluation.
 
 ---
 
-## 5. Model Evaluation
+## 5. Evaluating the Model
 
 > *All evaluation work lives in the `05_model_eval/` directory.*
 
-### 5.1 Overfitting Assessment
+### 5.1 Does the Model Generalize?
 
-**Overfitting** is measured by comparing how well the model performs on data it trained on (train set) versus data it has never seen (validation and test sets). A large gap between train and validation accuracy suggests the model has memorized training patterns rather than learning generalizable rules.
+The most important question I needed to answer is: does my model perform similarly on data it has seen (training set) versus data it hasn't (validation and test sets)? A large gap would suggest the model has memorized rather than learned.
 
-| Split | Accuracy | Log-Loss |
+| Data Split | Accuracy | Log-Loss (lower is better) |
 |:---|:---:|:---:|
-| Train | 41.0% | 1.694 |
+| Training | 41.0% | 1.694 |
 | Validation | 30.5% | 1.908 |
 | Test | 37.1% | 1.766 |
 
-The train-validation accuracy gap is ~10.6 percentage points. Part of this gap is explained by the validation period (August 23 – September 21) coinciding with MLB's September roster expansion, which introduces many new pitchers not seen during training. The test set (September 22 – October 28, postseason) contains more established pitchers, which is why test accuracy (37.1%) is higher than validation (30.5%).
+> *Log-loss measures how well the predicted probabilities match reality. A lower score means the model's probability estimates are more accurate.*
 
-### 5.2 Baseline Comparison
+There is a ~10 percentage point gap between training and validation accuracy. Part of this is explained by timing: the validation period (late August to mid-September) coincides with MLB's September roster expansion, which introduces many new pitchers the model hasn't seen before. The test set (late September through October postseason) contains more established pitchers, which is why test accuracy (37.1%) is higher than validation (30.5%).
 
-| Model | Accuracy |
+### 5.2 How Does It Compare to Simple Strategies?
+
+| Strategy | Accuracy |
 |:---|:---:|
-| Always predict FF | 34.8% |
-| Pitcher mode (most common pitch per pitcher) | 45.6% |
-| Pitcher mode per count | 47.2% |
-| **XGBoost model** | **37.1%** |
+| Always guess fastball | 34.8% |
+| Guess each pitcher's most common pitch | 45.6% |
+| Guess each pitcher's most common pitch for the current count | 47.2% |
+| **Machine learning model** | **37.1%** |
 
-The model beats the naive "always predict FF" baseline by +2.3 percentage points but underperforms the pitcher-mode baselines. Here's why:
+My model outperforms the simplest strategy (always guess fastball) by +2.3 percentage points, but it falls short of the pitcher-specific lookup strategies. Here's why:
 
-The pitcher-mode baselines are direct lookup tables on pitcher identity (e.g., "pitcher X throws FF 45% of the time"), which is the single strongest predictor of pitch type. I computed pitcher mix features from training targets during preprocessing, but including them in the model caused severe overfitting (a train-validation gap of ~25%) because the model memorized training label distributions. After removing these 40 target-derived features, the model relies on game-situation features (count, handedness, inning, runners, pitch sequencing) that generalize across pitchers but cannot encode individual pitcher repertoires.
+The pitcher-specific strategies work by simply memorizing each pitcher's tendencies from historical data — and knowing *who* the pitcher is turns out to be the single most powerful predictor of what pitch is coming. I did compute pitcher tendency features during preprocessing, but including them in the model caused severe overfitting (the training-validation gap ballooned to ~25%). After I removed those features, my model relies on game-situation information (count, handedness, inning, runners, pitch sequencing) that applies broadly across all pitchers — useful information, but not enough to compensate for losing pitcher identity.
 
-**Production recommendation:** In a production setting, the right approach would be to **ensemble** (combine) the pitcher-mode lookup with the ML model's game-context adjustments. The baseline captures *what* each pitcher throws, while the model captures *when* pitch selection shifts based on situational factors.
+**What I would do differently in practice:** The ideal approach would be to **combine** both methods — use the pitcher-specific lookup to capture *what each pitcher tends to throw*, and layer the machine learning model on top to capture *how the game situation shifts that mix*. I believe this combined approach would outperform either method alone.
 
 ### 5.3 Confusion Matrix
 
-> *A confusion matrix shows how the model's predictions compare to actual outcomes. Each row represents the true pitch type, and each column represents the predicted pitch type. Correct predictions appear along the diagonal.*
+> *A confusion matrix is a grid that shows how often the model correctly and incorrectly predicted each pitch type. The rows represent what was actually thrown, and the columns represent what the model predicted. A perfect model would have all its counts along the diagonal (top-left to bottom-right).*
 
 ![Confusion Matrix](05_model_eval/output/confusion_matrix.png)
 
-Key observations:
+Key takeaways:
 
-- **FF** and **SI** have the highest recall (85% and 31%) — meaning the model correctly identifies these pitch types most often.
-- **Rare types** (FS, CH, CU) have very low recall, as the model defaults to predicting majority classes without pitcher-specific repertoire information.
-- The model tends to **over-predict FF** at the expense of off-speed and breaking pitches.
+- My model is best at identifying **four-seam fastballs (FF)** and **sinkers (SI)** — the two most common pitch types.
+- For **rarer pitch types** (splitters, changeups, curveballs), my model struggles and tends to default to predicting fastball. Without pitcher-specific information, it doesn't have enough context to distinguish these less common pitches.
+- Overall, the model **over-predicts fastballs** — a natural consequence of fastballs being the most frequent pitch in the dataset.
 
 ### 5.4 Feature Importance
 
 ![Feature Importance](05_model_eval/output/feature_importance.png)
 
-Top features by gain show which game-situation and count-based features drive pitch type prediction after removing target-derived mix features.
+This chart shows which pieces of information my model relies on most heavily when making predictions. The most influential features relate to the count and game situation.
 
 ### 5.5 Calibration
 
-> *Calibration measures whether the model's predicted probabilities match reality. For example, when the model says "40% chance of a fastball," a well-calibrated model should be correct about 40% of the time.*
+> *Calibration answers the question: "When the model says there's a 40% chance of a fastball, does a fastball actually happen about 40% of the time?" A well-calibrated model means you can trust its probabilities at face value.*
 
 ![Calibration Plots](05_model_eval/output/calibration_plots.png)
 
-Calibration plots show predicted probability vs. actual frequency by pitch type. Well-calibrated models follow the diagonal line.
+These plots compare my model's predicted probabilities against actual outcomes for each pitch type. Points that fall along the diagonal line indicate well-calibrated predictions.
 
 ### 5.6 Prediction Confidence
 
 ![Confidence Analysis](05_model_eval/output/confidence_analysis.png)
 
-The confidence distribution and accuracy-by-confidence analysis show how reliable the model's predictions are at different confidence levels.
+This chart explores the relationship between **how confident my model is** in a prediction and **how often it's correct**. Ideally, high-confidence predictions should be right more often than low-confidence ones.
 
 ---
 
 ## 6. Next Steps
 
-> *With more time beyond the 4–6 hour window, these are the improvements I would prioritize, roughly in order of expected impact:*
+With additional time, these are the improvements I would prioritize, roughly in order of expected impact:
 
-1. **Pitcher identity encoding without target leakage** — This is the single highest-impact improvement. I would use target encoding with out-of-fold estimates or entity embeddings to capture each pitcher's individual repertoire without memorizing training labels. This would close the gap between the model and the pitcher-mode baselines.
-2. **Ensemble with baselines** — Combine the pitcher-mode lookup (which captures individual repertoire) with the ML model's game-context predictions via weighted averaging or stacking. The baseline knows *what* each pitcher throws; the model knows *when* situational factors shift that mix.
-3. **Hyperparameter tuning and RFE** — Systematic tuning (e.g., Bayesian optimization) and Recursive Feature Elimination (RFE) — a technique that iteratively removes the least important features — were skipped due to time but would likely improve performance.
-4. **Alternative models** — LightGBM, CatBoost, or neural network approaches that may capture sequential pitch patterns better.
-5. **Expanded feature engineering** — Pitcher fatigue curves (pitch count vs. typical workload), game-level momentum from score changes, day/night splits, and park effects.
-6. **Cross-validation** — Replace single out-of-time split with rolling-window cross-validation for more robust hyperparameter selection.
+1. **Better pitcher identity features** — This is the single highest-impact improvement. My current model struggles because it can't reliably use pitcher-specific tendencies without overfitting. I would explore more sophisticated techniques (like target encoding with safeguards or learned pitcher representations) to safely incorporate this critical information.
+
+2. **Combine my model with simple lookups** — I would merge the pitcher-specific lookup strategy (which knows *what* each pitcher tends to throw) with my machine learning model (which knows *when* the game situation changes that tendency). I believe this combined approach would outperform either method alone.
+
+3. **Optimize model settings** — I would systematically search for better hyperparameter values rather than setting them manually. This is a standard step that often yields meaningful improvements.
+
+4. **Try alternative algorithms** — I would experiment with other machine learning algorithms (LightGBM, CatBoost, or neural networks) that may be better suited to capturing sequential pitch patterns.
+
+5. **Engineer additional features** — I would add information about pitcher fatigue relative to their typical workload, game momentum from recent score changes, day vs. night games, and ballpark effects.
+
+6. **More robust evaluation** — I would use rolling-window cross-validation (testing on multiple time periods rather than just one) for more reliable performance estimates.
 
 ---
 
 ## How to Review
 
-Each numbered directory contains a Jupyter notebook (`.ipynb`) with inline markup explaining the analysis, and an HTML export (`.html`) for review without running any code. I recommend opening the HTML files in a browser for the easiest reading experience.
+Each numbered directory contains:
+
+- A **Jupyter notebook** (`.ipynb`) with the full analysis, code, and explanations
+- An **HTML export** (`.html`) for reviewing the analysis in a web browser without needing to run any code
+
+I recommend opening the HTML files in a browser for the easiest reading experience.
 
 ---
 
 ## Project Structure
 
 ```
-assessment_swish_analytics/
+pitch_type_prediction_model/
 ├── 00_data_collection/          # Raw data and metadata
 │   ├── pitches (S3)
 │   └── pitch_by_pitch_metadata.csv
-├── 01_eda/                      # Exploratory data analysis
+├── 01_eda/                      # Exploring the data
 │   ├── notebook.ipynb
 │   ├── notebook.html            # HTML export for easy review
-│   └── output/                  # Saved EDA figures
-├── 02_data_split/               # Train/validation/test split
+│   └── output/                  # Saved charts and figures
+├── 02_data_split/               # Splitting data chronologically
 │   ├── notebook.ipynb
 │   └── notebook.html
-├── 03_preprocessing/            # Feature engineering pipeline
+├── 03_preprocessing/            # Preparing data for the model
 │   ├── notebook.ipynb
 │   ├── notebook.html
-│   └── output/                  # Pickled PreprocessingModel
-├── 04_model/                    # XGBoost training
+│   └── output/                  # Saved preprocessing pipeline
+├── 04_model/                    # Building and training the model
 │   ├── notebook.ipynb
 │   ├── notebook.html
-│   └── output/                  # Model, label encoder, predictions
-├── 05_model_eval/               # Evaluation and diagnostics
+│   └── output/                  # Trained model and predictions
+├── 05_model_eval/               # Evaluating model performance
 │   ├── notebook.ipynb
 │   ├── notebook.html
-│   └── output/                  # Evaluation figures
+│   └── output/                  # Evaluation charts and figures
 └── README.md                    # This file
 ```
